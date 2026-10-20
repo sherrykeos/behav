@@ -1,4 +1,4 @@
-# Behav - Habbit tracker App
+# Behav - Habbit Tracker Mobile App
 
 > **Measure. Understand. Change.**
 
