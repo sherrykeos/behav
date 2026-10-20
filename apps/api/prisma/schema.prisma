@@ -1,0 +1,297 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum AccountStatus {
+  ACTIVE
+  UNVERIFIED
+  SUSPENDED
+  DELETED
+}
+
+enum MeasurementType {
+  COUNT
+  NUMERIC
+}
+
+enum GoalType {
+  ABSTINENCE
+  REDUCTION
+  FREQUENCY
+}
+
+enum EvaluationPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum DailyReviewStatus {
+  CONFIRMED_ZERO
+  LOGGED
+  PENDING
+  EXCLUDED
+}
+
+enum InsightType {
+  PATTERN
+  TREND
+  RECOVERY
+  DISTRIBUTION
+  CORRELATION
+}
+
+enum EvidenceQuality {
+  PRELIMINARY
+  MODERATE
+  HIGH
+}
+
+enum DeletionStatus {
+  PENDING
+  CANCELLED
+  COMPLETED
+}
+
+model User {
+  id                  String         @id @default(uuid())
+  authProviderSubject String?        @unique @map("auth_provider_subject")
+  email               String         @unique
+  passwordHash        String?        @map("password_hash")
+  displayName         String         @map("display_name")
+  accountStatus       AccountStatus  @default(UNVERIFIED) @map("account_status")
+  emailVerifiedAt     DateTime?      @map("email_verified_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  deletedAt           DateTime?      @map("deleted_at")
+
+  settings            UserSettings?
+  sessions            Session[]
+  behaviors           Behavior[]
+  behaviorEntries     BehaviorEntry[]
+  goals               Goal[]
+  dailyReviews        DailyReview[]
+  streakStates        StreakState[]
+  dailyAggregates     DailyAggregate[]
+  insights            Insight[]
+  deletionRequests    AccountDeletionRequest[]
+
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  userAgent        String?   @map("user_agent")
+  ipAddress        String?   @map("ip_address")
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@map("sessions")
+}
+
+model UserSettings {
+  userId          String   @id @map("user_id")
+  theme           String   @default("dark")
+  timezone        String   @default("UTC")
+  locale          String   @default("en")
+  dayBoundaryHour Int      @default(0) @map("day_boundary_hour")
+  preferences     Json     @default("{}")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model Behavior {
+  id              String          @id @default(uuid())
+  userId          String          @map("user_id")
+  name            String
+  description     String?
+  category        String          @default("OTHER")
+  icon            String          @default("activity")
+  accentColor     String          @default("#4ADE80") @map("accent_color")
+  measurementType MeasurementType @default(COUNT) @map("measurement_type")
+  unit            String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  archivedAt      DateTime?       @map("archived_at")
+  deletedAt       DateTime?       @map("deleted_at")
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries         BehaviorEntry[]
+  goals           Goal[]
+  dailyReviews    DailyReview[]
+  dailyAggregates DailyAggregate[]
+  insights        Insight[]
+
+  @@index([userId])
+  @@index([userId, archivedAt])
+  @@map("behaviors")
+}
+
+model BehaviorEntry {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  behaviorId  String    @map("behavior_id")
+  quantity    Decimal   @default(1.0) @db.Decimal(10, 2)
+  occurredAt  DateTime  @map("occurred_at")
+  timezone    String    @default("UTC")
+  notes       String?
+  contextTags Json      @default("[]") @map("context_tags")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  behavior    Behavior  @relation(fields: [behaviorId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@index([userId, behaviorId, occurredAt])
+  @@map("behavior_entries")
+}
+
+model Goal {
+  id               String           @id @default(uuid())
+  userId           String           @map("user_id")
+  behaviorId       String           @map("behavior_id")
+  goalType         GoalType         @map("goal_type")
+  targetValue      Decimal          @default(0.0) @map("target_value") @db.Decimal(10, 2)
+  evaluationPeriod EvaluationPeriod @default(DAILY) @map("evaluation_period")
+  startsAt         DateTime         @default(now()) @map("starts_at")
+  endsAt           DateTime?        @map("ends_at")
+  active           Boolean          @default(true)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  behavior         Behavior         @relation(fields: [behaviorId], references: [id], onDelete: Cascade)
+  versions         GoalVersion[]
+  streakStates     StreakState[]
+
+  @@index([userId, behaviorId])
+  @@map("goals")
+}
+
+model GoalVersion {
+  id               String           @id @default(uuid())
+  goalId           String           @map("goal_id")
+  userId           String           @map("user_id")
+  behaviorId       String           @map("behavior_id")
+  goalType         GoalType         @map("goal_type")
+  targetValue      Decimal          @map("target_value") @db.Decimal(10, 2)
+  evaluationPeriod EvaluationPeriod @map("evaluation_period")
+  versionNumber    Int              @default(1) @map("version_number")
+  effectiveFrom    DateTime         @default(now()) @map("effective_from")
+  effectiveTo      DateTime?        @map("effective_to")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  goal             Goal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([userId, behaviorId])
+  @@map("goal_versions")
+}
+
+model DailyReview {
+  id         String            @id @default(uuid())
+  userId     String            @map("user_id")
+  behaviorId String            @map("behavior_id")
+  localDate  String            @map("local_date") // YYYY-MM-DD
+  timezone   String            @default("UTC")
+  status     DailyReviewStatus @default(PENDING)
+  notes      String?
+  reviewedAt DateTime?         @map("reviewed_at")
+  createdAt  DateTime          @default(now()) @map("created_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  behavior   Behavior          @relation(fields: [behaviorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, behaviorId, localDate])
+  @@index([userId, localDate])
+  @@map("daily_reviews")
+}
+
+model StreakState {
+  id                 String    @id @default(uuid())
+  userId             String    @map("user_id")
+  goalId             String    @map("goal_id")
+  currentStreak      Int       @default(0) @map("current_streak")
+  longestStreak      Int       @default(0) @map("longest_streak")
+  lastQualifiedDate  String?   @map("last_qualified_date") // YYYY-MM-DD
+  calculatedAt       DateTime  @default(now()) @map("calculated_at")
+
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal               Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, goalId])
+  @@map("streak_states")
+}
+
+model DailyAggregate {
+  id              String            @id @default(uuid())
+  userId          String            @map("user_id")
+  behaviorId      String            @map("behavior_id")
+  localDate       String            @map("local_date") // YYYY-MM-DD
+  totalQuantity   Decimal           @default(0.0) @map("total_quantity") @db.Decimal(10, 2)
+  occurrenceCount Int               @default(0) @map("occurrence_count")
+  reviewStatus    DailyReviewStatus @default(PENDING) @map("review_status")
+  calculatedAt    DateTime          @default(now()) @map("calculated_at")
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  behavior        Behavior          @relation(fields: [behaviorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, behaviorId, localDate])
+  @@index([userId, localDate])
+  @@map("daily_aggregates")
+}
+
+model Insight {
+  id              String          @id @default(uuid())
+  userId          String          @map("user_id")
+  behaviorId      String?         @map("behavior_id")
+  insightType     InsightType     @map("insight_type")
+  title           String
+  summary         String
+  evidence        Json            @default("{}")
+  dateRangeStart  String          @map("date_range_start")
+  dateRangeEnd    String          @map("date_range_end")
+  evidenceQuality EvidenceQuality @default(MODERATE) @map("evidence_quality")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  dismissedAt     DateTime?       @map("dismissed_at")
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  behavior        Behavior?       @relation(fields: [behaviorId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, behaviorId])
+  @@map("insights")
+}
+
+model AccountDeletionRequest {
+  id           String         @id @default(uuid())
+  userId       String         @map("user_id")
+  requestedAt  DateTime       @default(now()) @map("requested_at")
+  scheduledFor DateTime       @map("scheduled_for")
+  status       DeletionStatus @default(PENDING)
+  completedAt  DateTime?      @map("completed_at")
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account_deletion_requests")
+}
