@@ -1,15 +1,35 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper, Card, Button, Badge } from '@/components/common';
-import { colors, radii, shadows, spacing, typography } from '@/theme';
+import { BehaviorHomeCard } from '@/components/behaviors/BehaviorHomeCard';
+import { BehaviorModal } from '@/components/behaviors/BehaviorModal';
+import { QuickLogModal } from '@/components/logging/QuickLogModal';
+import { EditLogModal } from '@/components/logging/EditLogModal';
+import { useBehaviors } from '@/context/BehaviorContext';
+import { colors, radii, spacing, typography } from '@/theme';
+import { type LogEntryWithBehavior } from '@/types/database';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [quickLogNoticeVisible, setQuickLogNoticeVisible] = useState(false);
+  const {
+    behaviors,
+    todaySummaries,
+    todayEntries,
+    quickLog,
+    createLogEntry,
+    updateLogEntry,
+    deleteLogEntry,
+    createBehavior,
+  } = useBehaviors();
 
-  // Real date calculation
+  const [quickLogVisible, setQuickLogVisible] = useState(false);
+  const [selectedBehaviorIdForLog, setSelectedBehaviorIdForLog] = useState<string | null>(null);
+  const [createBehaviorVisible, setCreateBehaviorVisible] = useState(false);
+  const [entryToEdit, setEntryToEdit] = useState<LogEntryWithBehavior | null>(null);
+
+  // Formatted date and greeting
   const today = new Date();
   const formattedDate = today.toLocaleDateString(undefined, {
     weekday: 'long',
@@ -24,9 +44,22 @@ export default function HomeScreen() {
     return 'Good evening';
   };
 
+  const handleQuickAddOne = async (behaviorId: string) => {
+    try {
+      await quickLog(behaviorId, 1);
+    } catch (err) {
+      console.error('Quick add failed:', err);
+    }
+  };
+
+  const handleOpenLogModal = (behaviorId?: string) => {
+    setSelectedBehaviorIdForLog(behaviorId || null);
+    setQuickLogVisible(true);
+  };
+
   return (
     <ScreenWrapper scrollable>
-      {/* Soft Ambient Header */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View>
@@ -37,108 +70,149 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Primary Action: Quick Log */}
+      {/* Primary Action Button */}
       <View style={styles.actionContainer}>
         <Button
           label="Quick Log"
-          onPress={() => setQuickLogNoticeVisible(true)}
+          onPress={() => {
+            if (behaviors.length === 0) {
+              setCreateBehaviorVisible(true);
+            } else {
+              handleOpenLogModal();
+            }
+          }}
           variant="primary"
           size="lg"
           icon={<Ionicons name="add-circle-outline" size={20} color={colors.textInverse} />}
         />
         <Text style={styles.actionSubtext}>
-          Record a behavior in just a few taps
+          {behaviors.length === 0
+            ? 'Set up your first behavior to start logging'
+            : 'Tap to log occurrences or use + on cards below'}
         </Text>
       </View>
 
-      {/* Today's Summary Card */}
-      <Card style={styles.summaryCard}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Today's Behaviors</Text>
-          <Badge label="0 tracked" variant="neutral" />
-        </View>
+      {/* Today's Behaviors */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Today's Behaviors</Text>
+        <Badge
+          label={`${todaySummaries.length} tracked`}
+          variant={todaySummaries.length > 0 ? 'primary' : 'neutral'}
+        />
+      </View>
 
-        {/* Real Empty State */}
-        <View style={styles.emptyContainer}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="sparkles-outline" size={26} color={colors.primary} />
-          </View>
-          <Text style={styles.emptyTitle}>Welcome to Behav</Text>
-          <Text style={styles.emptyDescription}>
-            Your personal, offline behavior tracker. Create your first habit or
-            action to start recording daily progress.
-          </Text>
-          <Button
-            label="Configure Behaviors"
-            onPress={() => router.push('/behaviors')}
-            variant="secondary"
-            size="sm"
-            style={styles.emptyButton}
-          />
-        </View>
-      </Card>
-
-      {/* How Behav Works Card */}
-      <Card variant="subtle" style={styles.infoCard}>
-        <Text style={styles.infoTitle}>Getting Started</Text>
-        <View style={styles.stepRow}>
-          <View style={styles.stepNumber}>
-            <Text style={styles.stepNumberText}>1</Text>
-          </View>
-          <Text style={styles.stepText}>
-            Add behaviors with optional daily limits in the Behaviors tab.
-          </Text>
-        </View>
-        <View style={styles.stepRow}>
-          <View style={styles.stepNumber}>
-            <Text style={styles.stepNumberText}>2</Text>
-          </View>
-          <Text style={styles.stepText}>
-            Log occurrences throughout the day with a single tap.
-          </Text>
-        </View>
-        <View style={styles.stepRow}>
-          <View style={styles.stepNumber}>
-            <Text style={styles.stepNumberText}>3</Text>
-          </View>
-          <Text style={styles.stepText}>
-            Review honest trends, streaks, and history offline.
-          </Text>
-        </View>
-      </Card>
-
-      {/* Notice Modal for Quick Log (Phase 1 placeholder requirement) */}
-      <Modal
-        visible={quickLogNoticeVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setQuickLogNoticeVisible(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setQuickLogNoticeVisible(false)}
-        >
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalIcon}>
-              <Ionicons name="information-circle-outline" size={32} color={colors.primary} />
+      {todaySummaries.length === 0 ? (
+        <Card style={styles.emptyCard}>
+          <View style={styles.emptyContainer}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="sparkles-outline" size={26} color={colors.primary} />
             </View>
-            <Text style={styles.modalTitle}>Quick Log</Text>
-            <Text style={styles.modalMessage}>
-              Quick logging requires behaviors and local SQLite storage.
-              {'\n\n'}
-              In Phase 2, the SQLite persistence layer will be created, and in
-              Phase 3, full quick logging and behavior management will be active.
+            <Text style={styles.emptyTitle}>Welcome to Behav</Text>
+            <Text style={styles.emptyDescription}>
+              No behaviors created yet. Add a habit or routine you want to track
+              calmly throughout the day.
             </Text>
             <Button
-              label="Understood"
-              onPress={() => setQuickLogNoticeVisible(false)}
-              variant="primary"
-              size="md"
-              style={styles.modalButton}
+              label="Add Your First Behavior"
+              onPress={() => setCreateBehaviorVisible(true)}
+              variant="secondary"
+              size="sm"
+              icon={<Ionicons name="add" size={16} color={colors.textPrimary} />}
+              style={styles.emptyButton}
             />
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </View>
+        </Card>
+      ) : (
+        <View style={styles.behaviorsList}>
+          {todaySummaries.map((summary) => (
+            <BehaviorHomeCard
+              key={summary.behaviorId}
+              summary={summary}
+              onQuickAdd={handleQuickAddOne}
+              onPressCard={(id) => handleOpenLogModal(id)}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* Today's Recent Logs Section (Correct & Review) */}
+      {todayEntries.length > 0 && (
+        <View style={styles.recentLogsSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Logs Today</Text>
+            <Text style={styles.tapToEditHint}>Tap entry to edit or delete</Text>
+          </View>
+
+          <Card style={styles.logsCard}>
+            {todayEntries.map((entry, index) => {
+              const timeString = new Date(entry.occurredAt).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              return (
+                <Pressable
+                  key={entry.id}
+                  onPress={() => setEntryToEdit(entry)}
+                  style={[
+                    styles.logRow,
+                    index < todayEntries.length - 1 && styles.logRowDivider,
+                  ]}
+                  android_ripple={{ color: colors.surfaceHover }}
+                >
+                  <View style={styles.logLeft}>
+                    <Text style={styles.logBehaviorName}>{entry.behaviorName}</Text>
+                    {entry.note ? (
+                      <Text style={styles.logNote} numberOfLines={1}>
+                        "{entry.note}"
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.logRight}>
+                    <Text style={styles.logValue}>
+                      +{entry.value} {entry.behaviorUnit}
+                    </Text>
+                    <Text style={styles.logTime}>{timeString}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </Card>
+        </View>
+      )}
+
+      {/* Quick Log Modal */}
+      <QuickLogModal
+        visible={quickLogVisible}
+        behaviors={behaviors}
+        initialBehaviorId={selectedBehaviorIdForLog}
+        onClose={() => setQuickLogVisible(false)}
+        onLog={async (bId, val, note) => {
+          await createLogEntry({ behaviorId: bId, value: val, note });
+        }}
+      />
+
+      {/* Create Behavior Modal (from Home screen shortcut) */}
+      <BehaviorModal
+        visible={createBehaviorVisible}
+        onClose={() => setCreateBehaviorVisible(false)}
+        onSave={async (data) => {
+          await createBehavior(data);
+        }}
+      />
+
+      {/* Edit / Delete Mistaken Log Modal */}
+      <EditLogModal
+        visible={entryToEdit !== null}
+        entry={entryToEdit}
+        onClose={() => setEntryToEdit(null)}
+        onSave={async (id, val, note) => {
+          await updateLogEntry(id, { value: val, note });
+        }}
+        onDelete={async (id) => {
+          await deleteLogEntry(id);
+        }}
+      />
     </ScreenWrapper>
   );
 }
@@ -171,18 +245,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
   },
-  summaryCard: {
-    marginBottom: spacing.lg,
-  },
-  cardHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: spacing.sm + 2,
+    marginTop: spacing.xs,
+  },
+  sectionTitle: {
+    ...typography.titleMedium,
+    fontSize: 17,
+  },
+  tapToEditHint: {
+    ...typography.bodySmall,
+    color: colors.textTertiary,
+    fontSize: 11,
+  },
+  behaviorsList: {
     marginBottom: spacing.md,
   },
-  cardTitle: {
-    ...typography.titleMedium,
-    fontSize: 18,
+  emptyCard: {
+    marginBottom: spacing.lg,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -211,68 +294,52 @@ const styles = StyleSheet.create({
   emptyButton: {
     alignSelf: 'center',
   },
-  infoCard: {
+  recentLogsSection: {
+    marginTop: spacing.md,
     marginBottom: spacing.xl,
   },
-  infoTitle: {
-    ...typography.titleSmall,
-    fontSize: 15,
-    marginBottom: spacing.md,
+  logsCard: {
+    padding: 0,
+    overflow: 'hidden',
   },
-  stepRow: {
+  logRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
-  stepNumber: {
-    width: 22,
-    height: 22,
-    borderRadius: radii.full,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
+  logRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
   },
-  stepNumberText: {
-    ...typography.labelSmall,
-    fontSize: 11,
+  logLeft: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  logBehaviorName: {
+    ...typography.labelLarge,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  logNote: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  logRight: {
+    alignItems: 'flex-end',
+  },
+  logValue: {
+    ...typography.labelLarge,
+    fontSize: 14,
     color: colors.primary,
   },
-  stepText: {
-    ...typography.bodyMedium,
-    flex: 1,
-    fontSize: 13,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(32, 30, 38, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: colors.surface,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    alignItems: 'center',
-    ...shadows.soft,
-  },
-  modalIcon: {
-    marginBottom: spacing.md,
-  },
-  modalTitle: {
-    ...typography.titleMedium,
-    marginBottom: spacing.xs,
-  },
-  modalMessage: {
-    ...typography.bodyMedium,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: spacing.lg,
-  },
-  modalButton: {
-    width: '100%',
+  logTime: {
+    ...typography.bodySmall,
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
 });

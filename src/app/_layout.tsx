@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { SQLiteProvider } from 'expo-sqlite';
 import { colors, spacing, typography } from '@/theme';
 import { DATABASE_NAME, initializeDatabase } from '@/db';
+import { BehaviorProvider } from '@/context/BehaviorContext';
 
 export default function RootLayout() {
   const [initError, setInitError] = useState<Error | null>(null);
@@ -31,15 +32,17 @@ export default function RootLayout() {
         onInit={initializeDatabase}
         onError={(err) => setInitError(err)}
       >
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
-            animation: 'fade',
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        </Stack>
+        <BehaviorProvider>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.bg },
+              animation: 'fade',
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          </Stack>
+        </BehaviorProvider>
       </SQLiteProvider>
     </SafeAreaProvider>
   );

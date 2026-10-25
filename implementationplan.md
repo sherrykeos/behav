@@ -95,21 +95,21 @@ Do not implement future-phase functionality early, except small foundations genu
 **Goal:** Make the app usable for everyday recording.
 
 ### Tasks
-- [ ] Create, edit, archive, and delete behaviors.
-- [ ] Support behavior name, optional category, measurement type, and optional daily limit.
-- [ ] Validate forms and show useful errors.
-- [ ] Log a count or quantity against a behavior with a date/time.
-- [ ] Support editing and deleting a mistaken entry.
-- [ ] Add quick logging from Home.
-- [ ] Calculate today's values and limit progress from actual SQLite data.
-- [ ] Confirm destructive actions and preserve history when archiving.
+- [x] Create, edit, archive, and delete behaviors.
+- [x] Support behavior name, optional category, measurement type, and optional daily limit.
+- [x] Validate forms and show useful errors.
+- [x] Log a count or quantity against a behavior with a date/time.
+- [x] Support editing and deleting a mistaken entry.
+- [x] Add quick logging from Home.
+- [x] Calculate today's values and limit progress from actual SQLite data.
+- [x] Confirm destructive actions and preserve history when archiving.
 
 ### Acceptance criteria
-- [ ] A behavior can be created and remains after restart.
-- [ ] Logging multiple entries produces correct totals.
-- [ ] Editing/deleting entries updates totals correctly.
-- [ ] Invalid values are rejected with understandable messages.
-- [ ] Empty and error states work.
+- [x] A behavior can be created and remains after restart.
+- [x] Logging multiple entries produces correct totals.
+- [x] Editing/deleting entries updates totals correctly.
+- [x] Invalid values are rejected with understandable messages.
+- [x] Empty and error states work.
 
 **Review gate:** Stop and wait for owner approval.
 
@@ -235,7 +235,7 @@ Update this section after each phase. Keep entries factual and concise.
 | 0 — Environment verification | Completed | Expo SDK 58.0.0, npm, Android target verified. |
 | 1 — App foundation and design system | Completed | Design tokens, primitives, 5-tab navigation & Home screen implemented; type-check and bundle export passing. |
 | 2 — SQLite persistence | Completed | Versioned migrations, schema (behaviors, log_entries, goals), typed repositories, validation, and integration tests passing. |
-| 3 — Behaviors and quick logging | Not started | |
+| 3 — Behaviors and quick logging | Completed | Full behavior CRUD, active/archived management, 1-tap card logging, QuickLogModal, recent entries review and correction with SQLite persistence. |
 | 4 — History | Not started | |
 | 5 — Goals and insights | Not started | |
 | 6 — Backup and CSV export | Not started | |

@@ -1,81 +1,253 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper, Card, Button, Badge } from '@/components/common';
+import { BehaviorModal } from '@/components/behaviors/BehaviorModal';
+import { useBehaviors } from '@/context/BehaviorContext';
 import { colors, radii, shadows, spacing, typography } from '@/theme';
+import { type Behavior } from '@/types/database';
 
 export default function BehaviorsScreen() {
-  const [noticeVisible, setNoticeVisible] = useState(false);
+  const {
+    behaviors,
+    archivedBehaviors,
+    createBehavior,
+    updateBehavior,
+    archiveBehavior,
+    unarchiveBehavior,
+    deleteBehavior,
+  } = useBehaviors();
+
+  const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingBehavior, setEditingBehavior] = useState<Behavior | null>(null);
+
+  const handleOpenCreate = () => {
+    setEditingBehavior(null);
+    setModalVisible(true);
+  };
+
+  const handleOpenEdit = (behavior: Behavior) => {
+    setEditingBehavior(behavior);
+    setModalVisible(true);
+  };
+
+  const handleArchive = (behavior: Behavior) => {
+    Alert.alert(
+      'Archive Behavior',
+      `Archive "${behavior.name}"?\n\nIt will be hidden from daily tracking, but all past records will remain safe in your history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          onPress: async () => {
+            try {
+              await archiveBehavior(behavior.id);
+            } catch (err) {
+              console.error('Failed to archive behavior:', err);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleUnarchive = async (behavior: Behavior) => {
+    try {
+      await unarchiveBehavior(behavior.id);
+    } catch (err) {
+      console.error('Failed to unarchive behavior:', err);
+    }
+  };
+
+  const handleDelete = (behavior: Behavior) => {
+    Alert.alert(
+      'Delete Behavior Permanently',
+      `Are you sure you want to delete "${behavior.name}"?\n\nCAUTION: This will permanently delete the behavior and ALL its past logged records. This cannot be undone.\n\nTip: If you only want to stop tracking it, choose Archive instead.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteBehavior(behavior.id);
+            } catch (err) {
+              console.error('Failed to delete behavior:', err);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const displayedList = activeTab === 'active' ? behaviors : archivedBehaviors;
 
   return (
     <ScreenWrapper scrollable>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Behaviors</Text>
-        <Text style={styles.subtitle}>
-          Manage habits, quantities, and daily limits
-        </Text>
-      </View>
-
-      <Card style={styles.contentCard}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.sectionTitle}>Active Behaviors</Text>
-          <Badge label="Phase 3" variant="lavender" />
-        </View>
-
-        <View style={styles.emptyContainer}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="list-outline" size={28} color={colors.primary} />
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.title}>Behaviors</Text>
+            <Text style={styles.subtitle}>
+              Manage habits, units, and optional daily targets
+            </Text>
           </View>
-          <Text style={styles.emptyTitle}>No Behaviors Yet</Text>
-          <Text style={styles.emptyDescription}>
-            In Phase 2, SQLite database persistence will be set up. In Phase 3,
-            you will be able to create, customize, edit, and archive behaviors
-            with optional daily limits.
-          </Text>
           <Button
-            label="New Behavior"
-            onPress={() => setNoticeVisible(true)}
+            label="New"
+            onPress={handleOpenCreate}
             variant="primary"
-            size="md"
-            icon={<Ionicons name="add" size={18} color={colors.textInverse} />}
-            style={styles.actionBtn}
+            size="sm"
+            icon={<Ionicons name="add" size={16} color={colors.textInverse} />}
           />
         </View>
-      </Card>
+      </View>
 
-      <Card variant="subtle">
-        <Text style={styles.infoTitle}>Planned Capabilities</Text>
-        <Text style={styles.infoText}>• Count or quantity measurement modes</Text>
-        <Text style={styles.infoText}>• Optional daily targets and limits</Text>
-        <Text style={styles.infoText}>• Safe archiving without losing past history</Text>
-      </Card>
-
-      <Modal
-        visible={noticeVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setNoticeVisible(false)}
-      >
+      {/* Segmented Tab: Active vs Archived */}
+      <View style={styles.tabBar}>
         <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setNoticeVisible(false)}
+          onPress={() => setActiveTab('active')}
+          style={[styles.tabButton, activeTab === 'active' && styles.tabButtonActive]}
         >
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Behavior Management</Text>
-            <Text style={styles.modalMessage}>
-              Creating and editing behaviors will be fully operational in Phase 3
-              once the SQLite persistence layer is established in Phase 2.
-            </Text>
-            <Button
-              label="Close"
-              onPress={() => setNoticeVisible(false)}
-              variant="primary"
-              size="md"
-              style={{ width: '100%' }}
-            />
-          </Pressable>
+          <Text
+            style={[styles.tabButtonText, activeTab === 'active' && styles.tabButtonTextActive]}
+          >
+            Active ({behaviors.length})
+          </Text>
         </Pressable>
-      </Modal>
+        <Pressable
+          onPress={() => setActiveTab('archived')}
+          style={[styles.tabButton, activeTab === 'archived' && styles.tabButtonActive]}
+        >
+          <Text
+            style={[styles.tabButtonText, activeTab === 'archived' && styles.tabButtonTextActive]}
+          >
+            Archived ({archivedBehaviors.length})
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* List */}
+      {displayedList.length === 0 ? (
+        <Card style={styles.emptyCard}>
+          <View style={styles.emptyContainer}>
+            <View style={styles.iconCircle}>
+              <Ionicons
+                name={activeTab === 'active' ? 'list-outline' : 'archive-outline'}
+                size={26}
+                color={colors.primary}
+              />
+            </View>
+            <Text style={styles.emptyTitle}>
+              {activeTab === 'active' ? 'No Active Behaviors' : 'No Archived Behaviors'}
+            </Text>
+            <Text style={styles.emptyDescription}>
+              {activeTab === 'active'
+                ? 'Create a behavior like "Water", "Mindful Breathing", or "Reading" to start tracking.'
+                : 'Archived behaviors will appear here. Archiving stops daily logging while preserving past records.'}
+            </Text>
+            {activeTab === 'active' && (
+              <Button
+                label="Create New Behavior"
+                onPress={handleOpenCreate}
+                variant="secondary"
+                size="sm"
+                icon={<Ionicons name="add" size={16} color={colors.textPrimary} />}
+                style={styles.emptyButton}
+              />
+            )}
+          </View>
+        </Card>
+      ) : (
+        displayedList.map((behavior) => (
+          <Card key={behavior.id} style={styles.behaviorCard}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderLeft}>
+                <Text style={styles.behaviorName}>{behavior.name}</Text>
+                <View style={styles.tagsRow}>
+                  {behavior.category && (
+                    <Badge label={behavior.category} variant="lavender" />
+                  )}
+                  <Badge label={`Unit: ${behavior.unit}`} variant="neutral" />
+                  {behavior.dailyLimit !== null && (
+                    <Badge
+                      label={`Limit: ${behavior.dailyLimit} ${behavior.unit}`}
+                      variant="peach"
+                    />
+                  )}
+                </View>
+              </View>
+            </View>
+
+            {behavior.description ? (
+              <Text style={styles.descriptionText}>{behavior.description}</Text>
+            ) : null}
+
+            {/* Action Buttons */}
+            <View style={styles.cardActions}>
+              {activeTab === 'active' ? (
+                <>
+                  <Button
+                    label="Edit"
+                    onPress={() => handleOpenEdit(behavior)}
+                    variant="secondary"
+                    size="sm"
+                    icon={<Ionicons name="create-outline" size={14} color={colors.textPrimary} />}
+                  />
+                  <Button
+                    label="Archive"
+                    onPress={() => handleArchive(behavior)}
+                    variant="secondary"
+                    size="sm"
+                    icon={<Ionicons name="archive-outline" size={14} color={colors.textPrimary} />}
+                  />
+                  <Button
+                    label="Delete"
+                    onPress={() => handleDelete(behavior)}
+                    variant="ghost"
+                    size="sm"
+                    textStyle={{ color: colors.danger }}
+                    icon={<Ionicons name="trash-outline" size={14} color={colors.danger} />}
+                  />
+                </>
+              ) : (
+                <>
+                  <Button
+                    label="Restore"
+                    onPress={() => handleUnarchive(behavior)}
+                    variant="secondary"
+                    size="sm"
+                    icon={<Ionicons name="refresh-outline" size={14} color={colors.primary} />}
+                  />
+                  <Button
+                    label="Delete Permanently"
+                    onPress={() => handleDelete(behavior)}
+                    variant="ghost"
+                    size="sm"
+                    textStyle={{ color: colors.danger }}
+                    icon={<Ionicons name="trash-outline" size={14} color={colors.danger} />}
+                  />
+                </>
+              )}
+            </View>
+          </Card>
+        ))
+      )}
+
+      {/* Create / Edit Modal */}
+      <BehaviorModal
+        visible={modalVisible}
+        behaviorToEdit={editingBehavior}
+        onClose={() => setModalVisible(false)}
+        onSave={async (data) => {
+          if (editingBehavior) {
+            await updateBehavior(editingBehavior.id, data);
+          } else {
+            await createBehavior(data);
+          }
+        }}
+      />
     </ScreenWrapper>
   );
 }
@@ -83,7 +255,12 @@ export default function BehaviorsScreen() {
 const styles = StyleSheet.create({
   header: {
     paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
     ...typography.titleLarge,
@@ -92,18 +269,33 @@ const styles = StyleSheet.create({
     ...typography.bodyMedium,
     marginTop: spacing.xs,
   },
-  contentCard: {
-    marginBottom: spacing.lg,
-  },
-  cardHeader: {
+  tabBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.full,
+    padding: 3,
     marginBottom: spacing.md,
   },
-  sectionTitle: {
-    ...typography.titleMedium,
-    fontSize: 18,
+  tabButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: radii.full,
+  },
+  tabButtonActive: {
+    backgroundColor: colors.surface,
+    ...shadows.soft,
+  },
+  tabButtonText: {
+    ...typography.labelLarge,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  tabButtonTextActive: {
+    color: colors.primary,
+  },
+  emptyCard: {
+    marginBottom: spacing.lg,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -114,7 +306,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: radii.full,
-    backgroundColor: colors.lavender,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
@@ -129,43 +321,45 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: spacing.lg,
   },
-  actionBtn: {
-    marginTop: spacing.xs,
+  emptyButton: {
+    alignSelf: 'center',
   },
-  infoTitle: {
-    ...typography.titleSmall,
-    fontSize: 15,
-    marginBottom: spacing.sm,
+  behaviorCard: {
+    marginBottom: spacing.md,
   },
-  infoText: {
-    ...typography.bodyMedium,
-    fontSize: 13,
-    marginBottom: spacing.xs,
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
-  modalOverlay: {
+  cardHeaderLeft: {
     flex: 1,
-    backgroundColor: 'rgba(32, 30, 38, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
   },
-  modalCard: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: colors.surface,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    alignItems: 'center',
-    ...shadows.soft,
-  },
-  modalTitle: {
+  behaviorName: {
     ...typography.titleMedium,
+    fontSize: 17,
     marginBottom: spacing.xs,
   },
-  modalMessage: {
+  tagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs + 2,
+    marginTop: 2,
+  },
+  descriptionText: {
     ...typography.bodyMedium,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: spacing.lg,
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: spacing.sm,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
   },
 });
