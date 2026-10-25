@@ -118,17 +118,17 @@ Do not implement future-phase functionality early, except small foundations genu
 **Goal:** Make past activity understandable and editable.
 
 ### Tasks
-- [ ] Browse/select previous dates.
-- [ ] Show entries and per-behavior totals for a selected date.
-- [ ] Support correcting or deleting records.
-- [ ] Keep date/time semantics consistent and avoid timezone shifts.
-- [ ] Include useful empty states for dates without records.
+- [x] Browse/select previous dates.
+- [x] Show entries and per-behavior totals for a selected date.
+- [x] Support correcting or deleting records.
+- [x] Keep date/time semantics consistent and avoid timezone shifts.
+- [x] Include useful empty states for dates without records.
 
 ### Acceptance criteria
-- [ ] Correct records appear on the correct dates.
-- [ ] Editing historical records does not accidentally move their date.
-- [ ] Daily totals agree with the database.
-- [ ] Empty dates are handled clearly.
+- [x] Correct records appear on the correct dates.
+- [x] Editing historical records does not accidentally move their date.
+- [x] Daily totals agree with the database.
+- [x] Empty dates are handled clearly.
 
 **Review gate:** Stop and wait for owner approval.
 
@@ -236,7 +236,7 @@ Update this section after each phase. Keep entries factual and concise.
 | 1 — App foundation and design system | Completed | Design tokens, primitives, 5-tab navigation & Home screen implemented; type-check and bundle export passing. |
 | 2 — SQLite persistence | Completed | Versioned migrations, schema (behaviors, log_entries, goals), typed repositories, validation, and integration tests passing. |
 | 3 — Behaviors and quick logging | Completed | Full behavior CRUD, active/archived management, 1-tap card logging, QuickLogModal, recent entries review and correction with SQLite persistence. |
-| 4 — History | Not started | |
+| 4 — History | Completed | Date navigation (prev/next/14-day strip), day summaries, grouped behavior records, retroactive logging, and record editing/deletion with zero timezone drift. |
 | 5 — Goals and insights | Not started | |
 | 6 — Backup and CSV export | Not started | |
 | 7 — Historical CSV import | Not started | |

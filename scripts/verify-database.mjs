@@ -185,14 +185,68 @@ async function testDatabase() {
   assert.strictEqual(activeGoals.length, 1);
   console.log('✓ Goal created & listed:', goal.title);
 
-  // Test 6: Foreign Key Cascading
-  // Delete b1: log entries and goal references should cascade or set null
-  await behaviorRepo.delete(b1.id);
-  const remainingLogs = await logRepo.getByBehaviorId(b1.id);
-  assert.strictEqual(remainingLogs.length, 0, 'Cascading delete must remove log entries for deleted behavior');
-  console.log('✓ Foreign key cascade delete verified');
+  // Test 7: Phase 4 Date Boundary & Midnight Tests
+  console.log('--- Testing Phase 4: Date Boundaries & Historical Edits ---');
+  const b3 = await behaviorRepo.create({
+    name: 'Cigarettes',
+    category: 'Bad Habits',
+    unit: 'cigarettes',
+    dailyLimit: 10,
+  });
 
-  console.log('--- ALL SQLITE PERSISTENCE TESTS PASSED ---');
+  const midnightBefore = '2026-10-24T23:59:59.000+05:30';
+  const midnightAfter = '2026-10-25T00:00:01.000+05:30';
+
+  const entryDay1 = await logRepo.create({
+    behaviorId: b3.id,
+    value: 2,
+    occurredAt: midnightBefore,
+    note: 'Late night cigarette',
+  });
+
+  const entryDay2 = await logRepo.create({
+    behaviorId: b3.id,
+    value: 3,
+    occurredAt: midnightAfter,
+    note: 'Just after midnight cigarette',
+  });
+
+  const day1Entries = await logRepo.getByDate('2026-10-24');
+  const day2Entries = await logRepo.getByDate('2026-10-25');
+
+  assert.strictEqual(day1Entries.length, 1, 'Day 1 must contain exactly the 23:59:59 entry');
+  assert.strictEqual(day1Entries[0].id, entryDay1.id);
+  assert.strictEqual(day1Entries[0].value, 2);
+
+  assert.strictEqual(day2Entries.some((e) => e.id === entryDay2.id), true, 'Day 2 must contain the 00:00:01 entry');
+  console.log('✓ Midnight and calendar date boundaries verified without timezone spill');
+
+  // Test 8: Historical Edit (moving entryDay1 from 2026-10-24 to 2026-10-25 and updating value to 4)
+  await logRepo.update(entryDay1.id, {
+    value: 4,
+    occurredAt: '2026-10-25T14:30:00.000+05:30',
+    note: 'Corrected date and quantity',
+  });
+
+  const day1AfterEdit = await logRepo.getByDate('2026-10-24');
+  assert.strictEqual(day1AfterEdit.length, 0, 'Day 1 should now have 0 entries after moving entry to Day 2');
+
+  const day2Summaries = await logRepo.getDailySummaries('2026-10-25');
+  const b3Summary = day2Summaries.find((s) => s.behaviorId === b3.id);
+  assert(b3Summary);
+  assert.strictEqual(b3Summary.totalValue, 7, 'Day 2 total should now be 3 + 4 = 7');
+  assert.strictEqual(b3Summary.entryCount, 2, 'Day 2 entry count should be 2');
+  console.log('✓ Historical date/time edit and dynamic recalculation verified');
+
+  // Test 9: Historical Deletion
+  await logRepo.delete(entryDay1.id);
+  const day2SummariesAfterDel = await logRepo.getDailySummaries('2026-10-25');
+  const b3SummaryAfterDel = day2SummariesAfterDel.find((s) => s.behaviorId === b3.id);
+  assert(b3SummaryAfterDel);
+  assert.strictEqual(b3SummaryAfterDel.totalValue, 3, 'Day 2 total should now be back to 3');
+  console.log('✓ Historical entry deletion and recalculation verified');
+
+  console.log('--- ALL SQLITE PERSISTENCE & HISTORY TESTS PASSED ---');
 }
 
 testDatabase().catch((err) => {

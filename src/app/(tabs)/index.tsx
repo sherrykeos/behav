@@ -206,8 +206,8 @@ export default function HomeScreen() {
         visible={entryToEdit !== null}
         entry={entryToEdit}
         onClose={() => setEntryToEdit(null)}
-        onSave={async (id, val, note) => {
-          await updateLogEntry(id, { value: val, note });
+        onSave={async (id, val, occurredAt, note) => {
+          await updateLogEntry(id, { value: val, occurredAt, note });
         }}
         onDelete={async (id) => {
           await deleteLogEntry(id);

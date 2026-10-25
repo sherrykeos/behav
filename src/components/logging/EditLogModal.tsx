@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Modal,
   TextInput,
+  ScrollView,
   Pressable,
   KeyboardAvoidingView,
   Platform,
@@ -14,12 +15,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/common/Button';
 import { colors, radii, shadows, spacing, typography } from '@/theme';
 import { type LogEntryWithBehavior } from '@/types/database';
+import {
+  toDayString,
+  extractTimeHHmm,
+  combineDateAndTime,
+  formatTimeFriendly,
+  formatFriendlyDate,
+} from '@/utils/date';
 
 interface EditLogModalProps {
   visible: boolean;
   entry: LogEntryWithBehavior | null;
   onClose: () => void;
-  onSave: (id: string, value: number, note?: string) => Promise<void>;
+  onSave: (id: string, value: number, occurredAt: string, note?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -31,6 +39,8 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
   onDelete,
 }) => {
   const [value, setValue] = useState('');
+  const [dateString, setDateString] = useState('');
+  const [timeString, setTimeString] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,9 +48,13 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
   useEffect(() => {
     if (entry) {
       setValue(String(entry.value));
+      setDateString(toDayString(entry.occurredAt));
+      setTimeString(extractTimeHHmm(entry.occurredAt));
       setNote(entry.note || '');
     } else {
       setValue('');
+      setDateString('');
+      setTimeString('');
       setNote('');
     }
     setError(null);
@@ -55,10 +69,30 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
       return;
     }
 
+    // Validate date string YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString.trim())) {
+      setError('Date must be in YYYY-MM-DD format.');
+      return;
+    }
+
+    // Validate time string HH:mm
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(timeString.trim())) {
+      setError('Time must be in 24-hour HH:mm format (e.g. 14:30 or 09:15).');
+      return;
+    }
+
+    let isoTimestamp: string;
+    try {
+      isoTimestamp = combineDateAndTime(dateString.trim(), timeString.trim());
+    } catch {
+      setError('Invalid date or time combination.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setError(null);
-      await onSave(entry.id, num, note.trim() || undefined);
+      await onSave(entry.id, num, isoTimestamp, note.trim() || undefined);
       onClose();
     } catch (err: any) {
       setError(err?.message || 'Failed to update entry.');
@@ -69,8 +103,8 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
 
   const handleDelete = () => {
     Alert.alert(
-      'Delete Log Entry',
-      `Are you sure you want to delete this ${entry.value} ${entry.behaviorUnit} entry?`,
+      'Delete Entry',
+      `Delete this record of ${entry.value} ${entry.behaviorUnit} from ${formatFriendlyDate(dateString)}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -92,11 +126,6 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
     );
   };
 
-  const timeString = new Date(entry.occurredAt).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
   return (
     <Modal
       visible={visible}
@@ -113,70 +142,103 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
           <View style={styles.header}>
             <View>
               <Text style={styles.title}>Correct Entry</Text>
-              <Text style={styles.subtitle}>
-                {entry.behaviorName} • {timeString}
-              </Text>
+              <Text style={styles.subtitle}>{entry.behaviorName}</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close modal">
               <Ionicons name="close" size={24} color={colors.textSecondary} />
             </Pressable>
           </View>
 
-          {error && (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle" size={18} color={colors.danger} />
-              <Text style={styles.errorText}>{error}</Text>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {error && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={18} color={colors.danger} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            {/* Quantity */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Quantity ({entry.behaviorUnit}) *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 1"
+                placeholderTextColor={colors.textTertiary}
+                value={value}
+                onChangeText={(val) => {
+                  setValue(val);
+                  if (error) setError(null);
+                }}
+                keyboardType="numeric"
+              />
             </View>
-          )}
 
-          {/* Value */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Quantity ({entry.behaviorUnit})</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 1"
-              placeholderTextColor={colors.textTertiary}
-              value={value}
-              onChangeText={(val) => {
-                setValue(val);
-                if (error) setError(null);
-              }}
-              keyboardType="numeric"
-            />
-          </View>
+            {/* Date and Time Row */}
+            <View style={styles.row}>
+              <View style={[styles.formGroup, { flex: 1.2 }]}>
+                <Text style={styles.label}>Date (YYYY-MM-DD) *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textTertiary}
+                  value={dateString}
+                  onChangeText={(val) => {
+                    setDateString(val);
+                    if (error) setError(null);
+                  }}
+                  maxLength={10}
+                />
+              </View>
 
-          {/* Note */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Note (Optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Add or change note..."
-              placeholderTextColor={colors.textTertiary}
-              value={note}
-              onChangeText={setNote}
-              maxLength={100}
-            />
-          </View>
+              <View style={[styles.formGroup, { flex: 0.8 }]}>
+                <Text style={styles.label}>Time (24h) *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="HH:mm"
+                  placeholderTextColor={colors.textTertiary}
+                  value={timeString}
+                  onChangeText={(val) => {
+                    setTimeString(val);
+                    if (error) setError(null);
+                  }}
+                  maxLength={5}
+                />
+              </View>
+            </View>
 
-          {/* Actions */}
-          <View style={styles.actionsRow}>
-            <Button
-              label="Delete"
-              onPress={handleDelete}
-              variant="danger"
-              size="md"
-              style={{ flex: 1 }}
-              loading={isSubmitting}
-            />
-            <Button
-              label="Save"
-              onPress={handleSave}
-              variant="primary"
-              size="md"
-              style={{ flex: 1.4 }}
-              loading={isSubmitting}
-            />
-          </View>
+            {/* Note */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Note (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Context or thoughts..."
+                placeholderTextColor={colors.textTertiary}
+                value={note}
+                onChangeText={setNote}
+                maxLength={100}
+              />
+            </View>
+
+            {/* Actions */}
+            <View style={styles.actionsRow}>
+              <Button
+                label="Delete"
+                onPress={handleDelete}
+                variant="danger"
+                size="md"
+                style={{ flex: 1 }}
+                loading={isSubmitting}
+              />
+              <Button
+                label="Save"
+                onPress={handleSave}
+                variant="primary"
+                size="md"
+                style={{ flex: 1.4 }}
+                loading={isSubmitting}
+              />
+            </View>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -196,6 +258,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
+    maxHeight: '88%',
     ...shadows.floating,
   },
   header: {
@@ -228,6 +291,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
   },
+  row: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
   formGroup: {
     marginBottom: spacing.md,
   },
@@ -251,6 +318,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     marginTop: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
 });
