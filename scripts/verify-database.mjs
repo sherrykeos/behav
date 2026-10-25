@@ -1,6 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert';
+import fs from 'node:fs';
 import { shiftDayString } from '../src/utils/date.ts';
+import {
+  validateBHFileV1,
+  calculateBHFileSummary,
+  calculateMaxStreakFromDays,
+  isDayGreen,
+} from '../src/utils/bhfile.ts';
 
 // 1. Create SQLite wrapper matching Expo SQLiteDatabase async interface
 function createMockExpoDb() {
@@ -314,60 +321,456 @@ async function testDatabase() {
   assert.strictEqual(smokingStatsAfterOver.currentStreakDays, 0, 'Exceeding limit on anchor day must reset streak to 0');
   console.log('✓ Streak correctly resets when limit is exceeded without fabricating false data');
 
-  // Test 11: Phase 6 Backup, Restore & CSV Export
-  console.log('--- Testing Phase 6: Backup, Restore & CSV Export ---');
-  const { BackupRepository } = await import('../src/db/repositories/backupRepository.ts');
+  // Test 11: Phase 6 JSON Canonical Backup & Restore System
+  console.log('--- Testing Phase 6: JSON Canonical Backup & Restore System ---');
+  const { BackupRepository, hasAcceptedBackupExtension } = await import('../src/db/repositories/backupRepository.ts');
   const backupRepo = new BackupRepository(db);
 
-  // 1. Export JSON backup
-  const backup = await backupRepo.createBackup();
-  assert.strictEqual(backup.app, 'behav', 'Backup app must be "behav"');
-  assert.strictEqual(backup.schemaVersion, 1, 'Backup schemaVersion must be 1');
-  assert(backup.data.behaviors.length >= 3, 'Backup must include all created behaviors');
-  assert(backup.data.log_entries.length >= 6, 'Backup must include all log entries');
-  assert(backup.data.goals.length >= 1, 'Backup must include goals');
-  console.log(`✓ JSON backup created successfully (${backup.data.behaviors.length} habits, ${backup.data.log_entries.length} logs)`);
+  // 1. Export canonical JSON backup (v1)
+  const exportedBhfile = await backupRepo.createBackup();
+  assert.strictEqual(exportedBhfile.format, 'bhfile', 'Format identifier must be "bhfile"');
+  assert.strictEqual(exportedBhfile.version, 1, 'Format version must be 1');
+  assert(exportedBhfile.habits.length >= 2, 'Must include active habits');
+  assert(exportedBhfile.days.length >= 1, 'Must include days array');
+  assert(exportedBhfile.summary.totalDays === exportedBhfile.days.length, 'Summary totalDays must match days count');
+  console.log(`✓ JSON backup export verified: ${exportedBhfile.habits.length} habits, ${exportedBhfile.days.length} days`);
 
-  // 2. Backup validation tests
-  const validJson = JSON.stringify(backup);
-  const validResult = backupRepo.validateBackup(validJson);
-  assert(validResult.isValid, 'Valid backup must pass validation');
+  // 2. Extension validation tests
+  const exportedString = JSON.stringify(exportedBhfile);
 
-  const invalidAppResult = backupRepo.validateBackup(JSON.stringify({ app: 'other_app', schemaVersion: 1, data: {} }));
-  assert(!invalidAppResult.isValid, 'Non-behav backup must be rejected');
+  // Import with .json extension
+  const jsonExtValidation = backupRepo.validateBackup(exportedString, 'Behav-Backup-2026-10-25.json');
+  assert(jsonExtValidation.isValid, 'Valid backup with .json extension must pass validation');
 
-  const invalidVersionResult = backupRepo.validateBackup(JSON.stringify({ app: 'behav', schemaVersion: 99, data: {} }));
-  assert(!invalidVersionResult.isValid, 'Future schema version must be rejected');
+  // Custom .bhfile extension MUST be rejected
+  const bhfileExtValidation = backupRepo.validateBackup(exportedString, 'Behav-Backup-2026-10-25.bhfile');
+  assert(!bhfileExtValidation.isValid, 'Custom .bhfile extension must be rejected');
+  assert.match(bhfileExtValidation.error, /Only standard \.json backup files are accepted/);
 
-  const corruptJsonResult = backupRepo.validateBackup('{ invalid json');
-  assert(!corruptJsonResult.isValid, 'Malformed JSON string must be rejected');
-  console.log('✓ Backup validation correctly enforces schema version and structure');
+  // Extension helper checks
+  assert(hasAcceptedBackupExtension('backup.json'), '.json must be accepted');
+  assert(!hasAcceptedBackupExtension('backup.bhfile'), '.bhfile must be rejected');
+  assert(!hasAcceptedBackupExtension('backup.csv'), '.csv must not be accepted as backup');
+  assert(!hasAcceptedBackupExtension('backup.txt'), '.txt must not be accepted as backup');
+  console.log('✓ Extension handling verified: .json accepted exclusively; .bhfile and non-backup extensions rejected');
 
-  // 3. CSV Export tests
-  const logsCsv = await backupRepo.exportLogsToCsv();
-  assert(logsCsv.startsWith('id,occurred_at,behavior_name,category,value,unit,note,behavior_id,created_at'), 'Logs CSV header must follow RFC 4180');
-  assert(logsCsv.includes('Smoking'), 'Logs CSV must contain behavior names');
+  // 3. Validation rejection rules
+  // Mismatched format identifier
+  const wrongFormat = backupRepo.validateBackup(JSON.stringify({ format: 'random_app', schemaVersion: 1, data: {} }));
+  assert(!wrongFormat.isValid, 'Mismatched format identifier must be rejected');
 
-  const behaviorsCsv = await backupRepo.exportBehaviorsToCsv();
-  assert(behaviorsCsv.startsWith('id,name,category,unit,daily_limit,is_archived,created_at'), 'Behaviors CSV header must follow RFC 4180');
-  assert(behaviorsCsv.includes('Smoking'), 'Behaviors CSV must include habits');
-  console.log('✓ RFC 4180 CSV export for logs and behaviors verified');
+  // Arbitrary JSON without format identifier
+  const arbitraryJson = backupRepo.validateBackup(JSON.stringify({ foo: 'bar', timestamp: 12345 }));
+  assert(!arbitraryJson.isValid, 'Arbitrary JSON must be rejected');
 
-  // 4. Merge restore test (idempotent, does not duplicate records)
-  const initialLogCount = (await db.getAllAsync('SELECT id FROM log_entries;')).length;
-  const mergeResult = await backupRepo.restoreBackup(backup, 'merge');
-  const postMergeLogCount = (await db.getAllAsync('SELECT id FROM log_entries;')).length;
-  assert.strictEqual(postMergeLogCount, initialLogCount, 'Merge restore with existing primary keys must not create duplicate records');
-  assert.strictEqual(mergeResult.skippedLogs, 0, 'No logs should be skipped when parent habits exist');
-  console.log('✓ Merge restore verified: primary-key integrity preserved without duplicates');
+  // Future schema version
+  const futureVersion = backupRepo.validateBackup(JSON.stringify({ format: 'bhfile', schemaVersion: 2, data: {} }));
+  assert(!futureVersion.isValid, 'Unsupported future schema version must be rejected');
 
-  // 5. Destructive replace restore test
-  const replaceResult = await backupRepo.restoreBackup(backup, 'replace');
-  const postReplaceLogCount = (await db.getAllAsync('SELECT id FROM log_entries;')).length;
-  assert.strictEqual(postReplaceLogCount, backup.data.log_entries.length, 'Replace restore must restore exact record counts');
-  console.log('✓ Destructive replace restore verified with complete database reconstruction');
+  // Malformed JSON string
+  const malformed = backupRepo.validateBackup('{ invalid json syntax');
+  assert(!malformed.isValid, 'Malformed JSON must be rejected');
 
-  console.log('--- ALL SQLITE PERSISTENCE, HISTORY, INSIGHTS & BACKUP TESTS PASSED ---');
+  // Duplicate behavior ID in same file
+  const dupBehaviorId = backupRepo.validateBackup(JSON.stringify({
+    format: 'bhfile',
+    schemaVersion: 1,
+    data: {
+      behaviors: [
+        { id: 'b-dup', name: 'Habit 1', unit: 'times' },
+        { id: 'b-dup', name: 'Habit 2', unit: 'times' },
+      ],
+      records: [],
+      goals: []
+    }
+  }));
+  assert(!dupBehaviorId.isValid, 'Duplicate behavior IDs within file must be rejected');
+
+  // Duplicate behavior name in same file
+  const dupBehaviorName = backupRepo.validateBackup(JSON.stringify({
+    format: 'bhfile',
+    schemaVersion: 1,
+    data: {
+      behaviors: [
+        { id: 'b-1', name: 'Smoking', unit: 'times' },
+        { id: 'b-2', name: 'smoking', unit: 'times' },
+      ],
+      records: [],
+      goals: []
+    }
+  }));
+  assert(!dupBehaviorName.isValid, 'Duplicate behavior names within file must be rejected');
+
+  // Dangling behavior reference (record references behavior not in file)
+  const danglingRef = backupRepo.validateBackup(JSON.stringify({
+    format: 'bhfile',
+    schemaVersion: 1,
+    data: {
+      behaviors: [{ id: 'b-1', name: 'Habit 1', unit: 'times' }],
+      records: [{ id: 'r-1', behaviorId: 'b-nonexistent', value: 1, occurredAt: '2026-10-25' }],
+      goals: []
+    }
+  }));
+  assert(!danglingRef.isValid, 'Dangling behavior reference must be rejected');
+
+  // Invalid date format (e.g. invalid calendar date 2024-02-31)
+  const invalidDate = backupRepo.validateBackup(JSON.stringify({
+    format: 'bhfile',
+    schemaVersion: 1,
+    data: {
+      behaviors: [{ id: 'b-1', name: 'Habit 1', unit: 'times' }],
+      records: [{ id: 'r-1', behaviorId: 'b-1', value: 1, occurredAt: '2024-02-31' }],
+      goals: []
+    }
+  }));
+  assert(!invalidDate.isValid, 'Invalid calendar date must be rejected');
+
+  // Invalid quantity (negative or zero)
+  const invalidQuantity = backupRepo.validateBackup(JSON.stringify({
+    format: 'bhfile',
+    schemaVersion: 1,
+    data: {
+      behaviors: [{ id: 'b-1', name: 'Habit 1', unit: 'times' }],
+      records: [{ id: 'r-1', behaviorId: 'b-1', value: -3, occurredAt: '2024-01-01' }],
+      goals: []
+    }
+  }));
+  assert(!invalidQuantity.isValid, 'Non-positive quantity must be rejected');
+  console.log('✓ Validation rules correctly enforce schema integrity, duplicate prevention, and foreign-key constraints');
+
+  // 4. Multi-year synthetic historical dataset ingestion test
+  const multiYearSynthetic = {
+    format: 'bhfile',
+    schemaVersion: 1,
+    appVersion: '1.0.0',
+    exportedAt: '2026-10-25T20:00:00.000+05:30',
+    data: {
+      behaviors: [
+        {
+          id: 'b-synthetic-smoke',
+          name: 'Synthetic Smoking',
+          category: 'Health',
+          unit: 'cigarettes',
+          measurementType: 'count',
+          dailyLimit: 4
+        },
+        {
+          id: 'b-synthetic-water',
+          name: 'Water Tracking',
+          category: 'Wellness',
+          unit: 'ml',
+          measurementType: 'volume',
+          dailyLimit: 2000
+        }
+      ],
+      records: [
+        // 2024 historical record
+        {
+          id: 'r-2024-01',
+          behaviorId: 'b-synthetic-smoke',
+          value: 3,
+          occurredAt: '2024-03-15',
+          note: 'Historical 2024 entry'
+        },
+        // 2025 historical record
+        {
+          id: 'r-2025-01',
+          behaviorId: 'b-synthetic-smoke',
+          value: 2,
+          occurredAt: '2025-07-20',
+          note: 'Historical 2025 entry'
+        },
+        // 2026 volume record
+        {
+          id: 'r-2026-01',
+          behaviorId: 'b-synthetic-water',
+          value: 500,
+          occurredAt: '2026-10-25T10:00:00.000+05:30',
+          note: 'Morning water glass'
+        }
+      ],
+      goals: [
+        {
+          id: 'g-synth-1',
+          title: 'Keep smoking under 4',
+          behaviorId: 'b-synthetic-smoke',
+          goalType: 'daily_limit',
+          targetValue: 4,
+          startDate: '2024-01-01',
+          isActive: true
+        }
+      ]
+    }
+  };
+
+  const multiYearValidation = backupRepo.validateBackup(JSON.stringify(multiYearSynthetic), 'synthetic.json');
+  assert(multiYearValidation.isValid, 'Multi-year synthetic payload must validate cleanly');
+
+  // Perform full atomic replace restore
+  const restoreOutcome = await backupRepo.restoreBackup(multiYearValidation.backup, 'replace');
+  assert.strictEqual(restoreOutcome.restoredBehaviors, 2, '2 behaviors restored');
+  assert.strictEqual(restoreOutcome.restoredLogs, 3, '3 records restored');
+  assert.strictEqual(restoreOutcome.restoredGoals, 1, '1 goal restored');
+
+  // Verify historical retrieval by date
+  const records2024 = await logRepo.getByDate('2024-03-15');
+  assert.strictEqual(records2024.length, 1, '2024 record must be retrievable');
+  assert.strictEqual(records2024[0].value, 3);
+  assert.strictEqual(records2024[0].behaviorName, 'Synthetic Smoking');
+
+  const records2025 = await logRepo.getByDate('2025-07-20');
+  assert.strictEqual(records2025.length, 1, '2025 record must be retrievable');
+  assert.strictEqual(records2025[0].value, 2);
+
+  const records2026 = await logRepo.getByDate('2026-10-25');
+  assert.strictEqual(records2026.length, 1, '2026 record must be retrievable');
+  assert.strictEqual(records2026[0].value, 500);
+  assert.strictEqual(records2026[0].behaviorUnit, 'ml');
+  console.log('✓ Multi-year records restored across 2024-2026 with exact dates, quantities, and units');
+
+  // 5. Atomic transaction rollback verification
+  const preFailureCount = (await db.getAllAsync('SELECT id FROM behaviors;')).length;
+  // Attempt invalid restore that triggers constraint violation inside transaction
+  try {
+    await backupRepo.restoreBackup({
+      format: 'bhfile',
+      schemaVersion: 1,
+      appVersion: '1.0.0',
+      exportedAt: getCurrentIsoTimestamp(),
+      data: {
+        behaviors: [{ id: 'b-fail-1', name: 'Will Roll Back', unit: 'times', dailyLimit: null, createdAt: 'now', archivedAt: null }],
+        // Foreign key violation or invalid SQL
+        records: [{ id: 'r-fail-1', behaviorId: 'b-does-not-exist', value: 1, occurredAt: 'now', note: null, createdAt: 'now', updatedAt: 'now' }],
+        goals: []
+      }
+    }, 'replace');
+  } catch (err) {
+    // Expected transaction rollback
+  }
+  // Verify database was preserved completely without partial writes
+  const postFailureCount = (await db.getAllAsync('SELECT id FROM behaviors;')).length;
+  assert.strictEqual(postFailureCount, preFailureCount, 'Database must be unchanged after failed transaction');
+  console.log('✓ Atomic transaction safety verified: failed restore leaves zero partial changes');
+
+  // --- Section 6: Testing Locked BHFile v1 Canonical Format & Streak Semantics ---
+  console.log('--- Testing Locked BHFile v1 Canonical Format & Streak Semantics ---');
+
+  // 1. Validate Canonical Reference Example
+  const exampleFileContent = fs.readFileSync('docs/example-v1.json', 'utf8');
+  const exampleJson = JSON.parse(exampleFileContent);
+  const exampleValidation = validateBHFileV1(exampleJson);
+  assert.strictEqual(exampleValidation.isValid, true, `Canonical example must validate: ${exampleValidation.error}`);
+  assert.strictEqual(exampleValidation.data.summary.totalDays, 6);
+  assert.strictEqual(exampleValidation.data.summary.greenDays, 4);
+  assert.strictEqual(exampleValidation.data.summary.maxStreak, 2);
+  assert.strictEqual(exampleValidation.data.summary.habits.H1.total, 7);
+  assert.strictEqual(exampleValidation.data.summary.habits.H2.total, 1);
+  assert.strictEqual(exampleValidation.data.summary.habits.H3.total, 120);
+  console.log('✓ Canonical reference example passes exact v1 schema and summary recalculation');
+
+  // 2. Format, Version & Prohibited Root Fields
+  const badFormat = validateBHFileV1({ ...exampleJson, format: 'json' });
+  assert.strictEqual(badFormat.isValid, false, 'Format must be "bhfile"');
+  assert.match(badFormat.error, /Invalid format identifier/);
+
+  const badVersion = validateBHFileV1({ ...exampleJson, version: 2 });
+  assert.strictEqual(badVersion.isValid, false, 'Version 2 must be rejected in v1 engine');
+  assert.match(badVersion.error, /Unsupported format version/);
+
+  const extraField = validateBHFileV1({ ...exampleJson, appVersion: '1.0.0' });
+  assert.strictEqual(extraField.isValid, false, 'Prohibited root fields must be rejected');
+  assert.match(extraField.error, /Prohibited root field detected/);
+  console.log('✓ Format identifier, version gating, and prohibited root fields rejected properly');
+
+  // 3. Habit Rules: Uniqueness & Allowed Keys
+  const dupHabits = {
+    ...exampleJson,
+    habits: [
+      { id: 'H1', name: 'Smoking', unit: 'cigarettes' },
+      { id: 'H1', name: 'Duplicate H1', unit: 'cigarettes' },
+    ],
+  };
+  const dupHabitsResult = validateBHFileV1(dupHabits);
+  assert.strictEqual(dupHabitsResult.isValid, false, 'Duplicate habit ID must be rejected');
+  assert.match(dupHabitsResult.error, /Duplicate habit ID/);
+
+  const extraHabitProp = {
+    ...exampleJson,
+    habits: [{ id: 'H1', name: 'Smoking', unit: 'cigarettes', dailyLimit: 10 }],
+  };
+  assert.strictEqual(validateBHFileV1(extraHabitProp).isValid, false, 'Prohibited habit field must be rejected');
+  console.log('✓ Habit ID uniqueness and strict habit property checking verified');
+
+  // 4. Date Rules: Chronological Order, Uniqueness & Validity
+  const nonChronological = {
+    ...exampleJson,
+    days: [
+      { date: '2026-10-22', habits: { H1: 0, H2: 0, H3: 0 } },
+      { date: '2026-10-21', habits: { H1: 0, H2: 0, H3: 0 } },
+    ],
+    summary: { totalDays: 2, greenDays: 2, maxStreak: 2, habits: { H1: { total: 0 }, H2: { total: 0 }, H3: { total: 0 } } }
+  };
+  const nonChronoResult = validateBHFileV1(nonChronological);
+  assert.strictEqual(nonChronoResult.isValid, false, 'Non-chronological dates must be rejected');
+  assert.match(nonChronoResult.error, /Non-chronological date order/);
+
+  const duplicateDate = {
+    ...exampleJson,
+    days: [
+      { date: '2026-10-21', habits: { H1: 0, H2: 0, H3: 0 } },
+      { date: '2026-10-21', habits: { H1: 0, H2: 0, H3: 0 } },
+    ],
+    summary: { totalDays: 2, greenDays: 2, maxStreak: 2, habits: { H1: { total: 0 }, H2: { total: 0 }, H3: { total: 0 } } }
+  };
+  const dupDateResult = validateBHFileV1(duplicateDate);
+  assert.strictEqual(dupDateResult.isValid, false, 'Duplicate dates must be rejected');
+  assert.match(dupDateResult.error, /Duplicate date/);
+
+  const invalidCalendarDate = {
+    ...exampleJson,
+    days: [{ date: '2026-02-31', habits: { H1: 0, H2: 0, H3: 0 } }],
+    summary: { totalDays: 1, greenDays: 1, maxStreak: 1, habits: { H1: { total: 0 }, H2: { total: 0 }, H3: { total: 0 } } }
+  };
+  const invalidDateResult = validateBHFileV1(invalidCalendarDate);
+  assert.strictEqual(invalidDateResult.isValid, false, 'Invalid calendar date must be rejected');
+  assert.match(invalidDateResult.error, /invalid calendar date/);
+  console.log('✓ Date uniqueness, chronological ordering, and calendar validation verified');
+
+  // 5. Day Habit Completeness, Non-Negativity & Discrete Unit Types
+  const missingHabitInDay = {
+    ...exampleJson,
+    days: [{ date: '2026-10-21', habits: { H1: 0, H2: 0 } }], // missing H3
+    summary: { totalDays: 1, greenDays: 1, maxStreak: 1, habits: { H1: { total: 0 }, H2: { total: 0 }, H3: { total: 0 } } }
+  };
+  const missingHabitResult = validateBHFileV1(missingHabitInDay);
+  assert.strictEqual(missingHabitResult.isValid, false, 'Day missing defined habit must be rejected');
+  assert.match(missingHabitResult.error, /missing habit "H3"/);
+
+  const unknownHabitInDay = {
+    ...exampleJson,
+    days: [{ date: '2026-10-21', habits: { H1: 0, H2: 0, H3: 0, H99: 0 } }],
+    summary: { totalDays: 1, greenDays: 1, maxStreak: 1, habits: { H1: { total: 0 }, H2: { total: 0 }, H3: { total: 0 } } }
+  };
+  const unknownHabitResult = validateBHFileV1(unknownHabitInDay);
+  assert.strictEqual(unknownHabitResult.isValid, false, 'Undefined habit in day must be rejected');
+  assert.match(unknownHabitResult.error, /references undefined habit ID/);
+
+  const negativeQty = {
+    ...exampleJson,
+    days: [{ date: '2026-10-21', habits: { H1: -1, H2: 0, H3: 0 } }],
+    summary: { totalDays: 1, greenDays: 0, maxStreak: 0, habits: { H1: { total: -1 }, H2: { total: 0 }, H3: { total: 0 } } }
+  };
+  const negResult = validateBHFileV1(negativeQty);
+  assert.strictEqual(negResult.isValid, false, 'Negative quantity must be rejected');
+  assert.match(negResult.error, /cannot be negative/);
+
+  const fractionalDiscrete = {
+    ...exampleJson,
+    days: [{ date: '2026-10-21', habits: { H1: 2.5, H2: 0, H3: 0 } }], // cigarettes cannot be 2.5
+    summary: { totalDays: 1, greenDays: 0, maxStreak: 0, habits: { H1: { total: 2.5 }, H2: { total: 0 }, H3: { total: 0 } } }
+  };
+  const fracResult = validateBHFileV1(fractionalDiscrete);
+  assert.strictEqual(fracResult.isValid, false, 'Fractional discrete count must be rejected');
+  assert.match(fracResult.error, /must be an integer/);
+  console.log('✓ Habit completeness, non-negativity, and discrete unit integer rules verified');
+
+  // 6. Streak Algorithm Semantics & Edge Cases
+  // Case A: Consecutive 5 green days
+  const streak5Days = [
+    { date: '2026-10-01', isGreen: true },
+    { date: '2026-10-02', isGreen: true },
+    { date: '2026-10-03', isGreen: true },
+    { date: '2026-10-04', isGreen: true },
+    { date: '2026-10-05', isGreen: true },
+  ];
+  assert.strictEqual(calculateMaxStreakFromDays(streak5Days), 5, '5 consecutive green days must yield streak of 5');
+
+  // Case B: Non-green day breaks streak
+  const streakWithNonGreen = [
+    { date: '2026-10-01', isGreen: true },
+    { date: '2026-10-02', isGreen: true },
+    { date: '2026-10-03', isGreen: false }, // break
+    { date: '2026-10-04', isGreen: true },
+  ];
+  assert.strictEqual(calculateMaxStreakFromDays(streakWithNonGreen), 2, 'Non-green day must break streak');
+
+  // Case C: Missing calendar date breaks streak (even if both adjacent days are green)
+  const streakWithMissingDate = [
+    { date: '2026-10-01', isGreen: true },
+    { date: '2026-10-02', isGreen: true },
+    // 2026-10-03 is MISSING
+    { date: '2026-10-04', isGreen: true },
+    { date: '2026-10-05', isGreen: true },
+    { date: '2026-10-06', isGreen: true },
+  ];
+  assert.strictEqual(calculateMaxStreakFromDays(streakWithMissingDate), 3, 'Missing calendar date must break streak');
+
+  // Case D: Zero green days
+  const zeroGreen = [
+    { date: '2026-10-01', isGreen: false },
+    { date: '2026-10-02', isGreen: false },
+  ];
+  assert.strictEqual(calculateMaxStreakFromDays(zeroGreen), 0, 'No green days must yield streak of 0');
+
+  // Case E: Empty dataset
+  assert.strictEqual(calculateMaxStreakFromDays([]), 0, 'Empty dataset must yield streak of 0');
+  console.log('✓ Streak algorithm verified for consecutive days, non-green breaks, missing date breaks, and zero green days');
+
+  // 7. Inconsistent Summary Tampering Detection
+  const tamperedTotalDays = {
+    ...exampleJson,
+    summary: { ...exampleJson.summary, totalDays: 99 }
+  };
+  const tamperedTotalResult = validateBHFileV1(tamperedTotalDays);
+  assert.strictEqual(tamperedTotalResult.isValid, false, 'Tampered totalDays must be rejected');
+  assert.match(tamperedTotalResult.error, /Summary mismatch: totalDays/);
+
+  const tamperedGreenDays = {
+    ...exampleJson,
+    summary: { ...exampleJson.summary, greenDays: 99 }
+  };
+  const tamperedGreenResult = validateBHFileV1(tamperedGreenDays);
+  assert.strictEqual(tamperedGreenResult.isValid, false, 'Tampered greenDays must be rejected');
+  assert.match(tamperedGreenResult.error, /Summary mismatch: greenDays/);
+
+  const tamperedStreak = {
+    ...exampleJson,
+    summary: { ...exampleJson.summary, maxStreak: 99 }
+  };
+  const tamperedStreakResult = validateBHFileV1(tamperedStreak);
+  assert.strictEqual(tamperedStreakResult.isValid, false, 'Tampered maxStreak must be rejected');
+  assert.match(tamperedStreakResult.error, /Summary mismatch: maxStreak/);
+
+  const tamperedHabitTotal = {
+    ...exampleJson,
+    summary: {
+      ...exampleJson.summary,
+      habits: { ...exampleJson.summary.habits, H1: { total: 999 } }
+    }
+  };
+  const tamperedHabitResult = validateBHFileV1(tamperedHabitTotal);
+  assert.strictEqual(tamperedHabitResult.isValid, false, 'Tampered habit total must be rejected');
+  assert.match(tamperedHabitResult.error, /Summary mismatch for habit "H1"/);
+  console.log('✓ Independent summary verification strictly rejects tampered counts, streaks, or totals');
+
+  // 8. Empty Dataset Behavior
+  const emptyFile = {
+    format: 'bhfile',
+    version: 1,
+    habits: [{ id: 'H1', name: 'Smoking', unit: 'cigarettes' }],
+    days: [],
+    summary: {
+      totalDays: 0,
+      greenDays: 0,
+      maxStreak: 0,
+      habits: { H1: { total: 0 } }
+    }
+  };
+  const emptyResult = validateBHFileV1(emptyFile);
+  assert.strictEqual(emptyResult.isValid, true, 'Valid empty BHFile must pass validation');
+  console.log('✓ Valid empty BHFile structure passes validation cleanly');
+
+  console.log('--- ALL SQLITE PERSISTENCE, HISTORY, INSIGHTS & BHFILE TESTS PASSED ---');
 }
 
 testDatabase().catch((err) => {
