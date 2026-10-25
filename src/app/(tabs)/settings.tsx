@@ -5,30 +5,25 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenWrapper, Card, Badge, Button } from '@/components/common';
+import { ScreenWrapper, Card, Badge } from '@/components/common';
 import { RestoreModal } from '@/components/settings/RestoreModal';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useBehaviors } from '@/context/BehaviorContext';
 import { exportFile, pickAndReadFile } from '@/utils/fileExport';
 import { toDayString, getCurrentIsoTimestamp, formatFriendlyDate } from '@/utils/date';
-import type { BehavBackupFile, RestoreResult } from '@/db';
+import type { BHFile, RestoreResult } from '@/db';
 
 export default function SettingsScreen() {
   const {
     createBackupData,
     validateBackupContent,
     restoreBackupData,
-    exportLogsCsv,
-    exportBehaviorsCsv,
   } = useBehaviors();
 
   // Export / Restore UI states
-  const [isExportingJson, setIsExportingJson] = useState(false);
-  const [isExportingLogsCsv, setIsExportingLogsCsv] = useState(false);
-  const [isExportingBehaviorsCsv, setIsExportingBehaviorsCsv] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [isReadingFile, setIsReadingFile] = useState(false);
 
   // Status & Feedback banners
@@ -39,7 +34,7 @@ export default function SettingsScreen() {
 
   // Restore Modal states
   const [restoreModalVisible, setRestoreModalVisible] = useState(false);
-  const [selectedBackup, setSelectedBackup] = useState<BehavBackupFile | null>(null);
+  const [selectedBackup, setSelectedBackup] = useState<BHFile | null>(null);
   const [selectedFilename, setSelectedFilename] = useState<string>('');
 
   // Track last backup time in memory
@@ -48,14 +43,14 @@ export default function SettingsScreen() {
   /**
    * Handle JSON Backup creation and export
    */
-  const handleExportJson = async () => {
-    setIsExportingJson(true);
+  const handleExportBackup = async () => {
+    setIsExporting(true);
     setStatusMessage(null);
 
     try {
       const backup = await createBackupData();
       const today = toDayString();
-      const filename = `behav-backup-${today}.json`;
+      const filename = `Behav-Backup-${today}.json`;
       const jsonContent = JSON.stringify(backup, null, 2);
 
       const result = await exportFile(jsonContent, filename, 'application/json');
@@ -63,9 +58,12 @@ export default function SettingsScreen() {
       if (result.success) {
         const now = getCurrentIsoTimestamp();
         setLastBackupTime(now);
+        const habitCount = 'habits' in backup ? backup.habits.length : backup.data.behaviors.length;
+        const recordCount = 'days' in backup ? backup.days.length : (backup.data.records?.length ?? (backup.data as any).logEntries?.length ?? 0);
+        const recordLabel = 'days' in backup ? 'days' : 'records';
         setStatusMessage({
           type: 'success',
-          text: `Backup verified and saved: ${filename} (${backup.data.behaviors.length} habits, ${backup.data.log_entries.length} logs).`,
+          text: `Backup verified and saved: ${filename} (${habitCount} habits, ${recordCount} ${recordLabel}).`,
         });
       } else {
         setStatusMessage({
@@ -79,19 +77,19 @@ export default function SettingsScreen() {
         text: err?.message || 'Failed to generate backup.',
       });
     } finally {
-      setIsExportingJson(false);
+      setIsExporting(false);
     }
   };
 
   /**
-   * Handle Document Picking and Validation for Restore
+   * Handle unified Import Backup (accepting .json)
    */
   const handlePickAndRestore = async () => {
     setIsReadingFile(true);
     setStatusMessage(null);
 
     try {
-      const pickResult = await pickAndReadFile(['application/json', 'text/json', '*/*']);
+      const pickResult = await pickAndReadFile(['*/*', 'application/json', 'application/octet-stream', 'text/*']);
 
       if (pickResult.cancelled) {
         setIsReadingFile(false);
@@ -107,7 +105,8 @@ export default function SettingsScreen() {
         return;
       }
 
-      const validation = validateBackupContent(pickResult.content);
+      const filename = pickResult.filename || 'backup.json';
+      const validation = validateBackupContent(pickResult.content, filename);
 
       if (!validation.isValid || !validation.backup) {
         setStatusMessage({
@@ -119,7 +118,7 @@ export default function SettingsScreen() {
       }
 
       setSelectedBackup(validation.backup);
-      setSelectedFilename(pickResult.filename || 'backup.json');
+      setSelectedFilename(filename);
       setRestoreModalVisible(true);
     } catch (err: any) {
       setStatusMessage({
@@ -134,86 +133,16 @@ export default function SettingsScreen() {
   /**
    * Execute actual restore (called from RestoreModal)
    */
-  const handleConfirmRestore = async (mode: 'merge' | 'replace'): Promise<RestoreResult> => {
+  const handleConfirmRestore = async (mode: 'replace' | 'merge'): Promise<RestoreResult> => {
     if (!selectedBackup) {
       throw new Error('No backup selected for restore.');
     }
     const result = await restoreBackupData(selectedBackup, mode);
     setStatusMessage({
       type: 'success',
-      text: `Restore complete: ${result.restoredBehaviors} habits, ${result.restoredLogs} logs (${mode} mode).`,
+      text: `Restore complete: ${result.restoredBehaviors} habits, ${result.restoredLogs} records restored.`,
     });
     return result;
-  };
-
-  /**
-   * Export Activity Logs to CSV
-   */
-  const handleExportLogsCsv = async () => {
-    setIsExportingLogsCsv(true);
-    setStatusMessage(null);
-
-    try {
-      const csv = await exportLogsCsv();
-      const today = toDayString();
-      const filename = `behav-activity-logs-${today}.csv`;
-
-      const result = await exportFile(csv, filename, 'text/csv');
-
-      if (result.success) {
-        setStatusMessage({
-          type: 'success',
-          text: `Activity logs CSV saved: ${filename}`,
-        });
-      } else {
-        setStatusMessage({
-          type: 'error',
-          text: result.error || 'Failed to export logs CSV.',
-        });
-      }
-    } catch (err: any) {
-      setStatusMessage({
-        type: 'error',
-        text: err?.message || 'Failed to export activity logs.',
-      });
-    } finally {
-      setIsExportingLogsCsv(false);
-    }
-  };
-
-  /**
-   * Export Habits List to CSV
-   */
-  const handleExportBehaviorsCsv = async () => {
-    setIsExportingBehaviorsCsv(true);
-    setStatusMessage(null);
-
-    try {
-      const csv = await exportBehaviorsCsv();
-      const today = toDayString();
-      const filename = `behav-habits-${today}.csv`;
-
-      const result = await exportFile(csv, filename, 'text/csv');
-
-      if (result.success) {
-        setStatusMessage({
-          type: 'success',
-          text: `Habits list CSV saved: ${filename}`,
-        });
-      } else {
-        setStatusMessage({
-          type: 'error',
-          text: result.error || 'Failed to export habits CSV.',
-        });
-      }
-    } catch (err: any) {
-      setStatusMessage({
-        type: 'error',
-        text: err?.message || 'Failed to export habits list.',
-      });
-    } finally {
-      setIsExportingBehaviorsCsv(false);
-    }
   };
 
   return (
@@ -258,7 +187,7 @@ export default function SettingsScreen() {
           <View>
             <Text style={styles.sectionTitle}>Full Data Backup</Text>
             <Text style={styles.sectionSubtitle}>
-              Complete versioned snapshot of habits, logs, and goals
+              Standard JSON backup format (.json files)
             </Text>
           </View>
           <Badge label="JSON v1" variant="lavender" />
@@ -267,12 +196,12 @@ export default function SettingsScreen() {
         <View style={styles.backupActions}>
           <TouchableOpacity
             style={styles.actionRow}
-            onPress={handleExportJson}
-            disabled={isExportingJson}
+            onPress={handleExportBackup}
+            disabled={isExporting}
             activeOpacity={0.7}
           >
             <View style={styles.rowIcon}>
-              {isExportingJson ? (
+              {isExporting ? (
                 <ActivityIndicator size="small" color={colors.primary} />
               ) : (
                 <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
@@ -281,7 +210,7 @@ export default function SettingsScreen() {
             <View style={styles.rowContent}>
               <Text style={styles.rowTitle}>Export JSON Backup</Text>
               <Text style={styles.rowDesc}>
-                Save complete database to device storage, Google Drive, or share
+                Save complete database to Behav-Backup-YYYY-MM-DD.json
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
@@ -289,6 +218,7 @@ export default function SettingsScreen() {
 
           <View style={styles.divider} />
 
+          {/* Unified Import Backup Action */}
           <TouchableOpacity
             style={styles.actionRow}
             onPress={handlePickAndRestore}
@@ -303,9 +233,9 @@ export default function SettingsScreen() {
               )}
             </View>
             <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>Restore from Backup</Text>
+              <Text style={styles.rowTitle}>Import Backup</Text>
               <Text style={styles.rowDesc}>
-                Preview records and safely merge or replace existing data
+                Restore from a standard .json backup file
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
@@ -322,66 +252,7 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      {/* Section 2: CSV Spreadsheet Export */}
-      <Card style={styles.contentCard}>
-        <View style={styles.cardHeader}>
-          <View>
-            <Text style={styles.sectionTitle}>Spreadsheet Export</Text>
-            <Text style={styles.sectionSubtitle}>
-              Standard CSV format for Excel, Sheets, or custom analysis
-            </Text>
-          </View>
-          <Badge label="CSV" variant="sage" />
-        </View>
 
-        <View style={styles.backupActions}>
-          <TouchableOpacity
-            style={styles.actionRow}
-            onPress={handleExportLogsCsv}
-            disabled={isExportingLogsCsv}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.rowIcon, { backgroundColor: colors.sage }]}>
-              {isExportingLogsCsv ? (
-                <ActivityIndicator size="small" color={colors.sageText} />
-              ) : (
-                <Ionicons name="document-text-outline" size={20} color={colors.sageText} />
-              )}
-            </View>
-            <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>Export Activity Logs (CSV)</Text>
-              <Text style={styles.rowDesc}>
-                All logged timestamps, quantities, habits, and notes
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          <TouchableOpacity
-            style={styles.actionRow}
-            onPress={handleExportBehaviorsCsv}
-            disabled={isExportingBehaviorsCsv}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.rowIcon, { backgroundColor: colors.sage }]}>
-              {isExportingBehaviorsCsv ? (
-                <ActivityIndicator size="small" color={colors.sageText} />
-              ) : (
-                <Ionicons name="list-outline" size={20} color={colors.sageText} />
-              )}
-            </View>
-            <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>Export Habits & Limits (CSV)</Text>
-              <Text style={styles.rowDesc}>
-                Definitions, daily consumption limits, and status
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
-      </Card>
 
       {/* Section 3: Data Safety Notice */}
       <Card variant="subtle" style={styles.contentCard}>
@@ -397,7 +268,7 @@ export default function SettingsScreen() {
           <Ionicons name="alert-circle-outline" size={18} color={colors.peachText} />
           <Text style={styles.warningCalloutText}>
             Important: A backup stored only on this phone will be lost if your device is damaged, lost,
-            or reset. Please use the system share sheet to transfer your exported backups to external storage,
+            or reset. Please use the system share sheet to transfer your exported .json backups to external storage,
             Google Drive, or your personal computer.
           </Text>
         </View>
@@ -419,8 +290,8 @@ export default function SettingsScreen() {
           <Text style={styles.specValue}>Local SQLite</Text>
         </View>
         <View style={styles.specRow}>
-          <Text style={styles.specKey}>Backup Schema</Text>
-          <Text style={styles.specValue}>v1 (JSON)</Text>
+          <Text style={styles.specKey}>Canonical Backup</Text>
+          <Text style={styles.specValue}>Standard JSON (v1)</Text>
         </View>
       </Card>
 

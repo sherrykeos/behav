@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
   type Behavior,
@@ -48,8 +48,8 @@ interface BehaviorContextValue {
   getOverallSummary: (anchorDate?: string) => Promise<{ activeHabitCount: number; totalLogsToday: number; totalLogs7Days: number }>;
   // Backup & Restore operations
   createBackupData: () => Promise<import('@/db').BehavBackupFile>;
-  validateBackupContent: (jsonString: string) => { isValid: boolean; error?: string; backup?: import('@/db').BehavBackupFile };
-  restoreBackupData: (backup: import('@/db').BehavBackupFile, mode: 'merge' | 'replace') => Promise<import('@/db').RestoreResult>;
+  validateBackupContent: (jsonString: string, filename?: string) => { isValid: boolean; error?: string; backup?: import('@/db').BehavBackupFile };
+  restoreBackupData: (backup: import('@/db').BehavBackupFile, mode?: 'merge' | 'replace') => Promise<import('@/db').RestoreResult>;
   exportLogsCsv: () => Promise<string>;
   exportBehaviorsCsv: () => Promise<string>;
   // Utilities
@@ -61,7 +61,7 @@ const BehaviorContext = createContext<BehaviorContextValue | null>(null);
 
 export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const db = useSQLiteContext();
-  const [repos] = useState<DatabaseRepositories>(() => createRepositories(db));
+  const repos = useMemo<DatabaseRepositories>(() => createRepositories(db), [db]);
 
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
   const [archivedBehaviors, setArchivedBehaviors] = useState<Behavior[]>([]);
@@ -100,35 +100,35 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [refreshData]);
 
   // Behavior CRUD
-  const createBehavior = async (input: CreateBehaviorInput): Promise<Behavior> => {
+  const createBehavior = useCallback(async (input: CreateBehaviorInput): Promise<Behavior> => {
     const created = await repos.behaviors.create(input);
     await refreshData();
     return created;
-  };
+  }, [repos, refreshData]);
 
-  const updateBehavior = async (id: string, input: UpdateBehaviorInput): Promise<Behavior> => {
+  const updateBehavior = useCallback(async (id: string, input: UpdateBehaviorInput): Promise<Behavior> => {
     const updated = await repos.behaviors.update(id, input);
     await refreshData();
     return updated;
-  };
+  }, [repos, refreshData]);
 
-  const archiveBehavior = async (id: string): Promise<void> => {
+  const archiveBehavior = useCallback(async (id: string): Promise<void> => {
     await repos.behaviors.archive(id);
     await refreshData();
-  };
+  }, [repos, refreshData]);
 
-  const unarchiveBehavior = async (id: string): Promise<void> => {
+  const unarchiveBehavior = useCallback(async (id: string): Promise<void> => {
     await repos.behaviors.unarchive(id);
     await refreshData();
-  };
+  }, [repos, refreshData]);
 
-  const deleteBehavior = async (id: string): Promise<void> => {
+  const deleteBehavior = useCallback(async (id: string): Promise<void> => {
     await repos.behaviors.delete(id);
     await refreshData();
-  };
+  }, [repos, refreshData]);
 
   // Log Entry CRUD
-  const quickLog = async (behaviorId: string, value = 1, note?: string): Promise<LogEntry> => {
+  const quickLog = useCallback(async (behaviorId: string, value = 1, note?: string): Promise<LogEntry> => {
     const entry = await repos.logEntries.create({
       behaviorId,
       value,
@@ -136,115 +136,147 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
     await refreshData();
     return entry;
-  };
+  }, [repos, refreshData]);
 
-  const createLogEntry = async (input: CreateLogEntryInput): Promise<LogEntry> => {
+  const createLogEntry = useCallback(async (input: CreateLogEntryInput): Promise<LogEntry> => {
     const entry = await repos.logEntries.create(input);
     await refreshData();
     return entry;
-  };
+  }, [repos, refreshData]);
 
-  const updateLogEntry = async (id: string, input: UpdateLogEntryInput): Promise<LogEntry> => {
+  const updateLogEntry = useCallback(async (id: string, input: UpdateLogEntryInput): Promise<LogEntry> => {
     const updated = await repos.logEntries.update(id, input);
     await refreshData();
     return updated;
-  };
+  }, [repos, refreshData]);
 
-  const deleteLogEntry = async (id: string): Promise<void> => {
+  const deleteLogEntry = useCallback(async (id: string): Promise<void> => {
     await repos.logEntries.delete(id);
     await refreshData();
-  };
+  }, [repos, refreshData]);
 
   // Goals CRUD
-  const createGoal = async (input: CreateGoalInput): Promise<Goal> => {
+  const createGoal = useCallback(async (input: CreateGoalInput): Promise<Goal> => {
     const goal = await repos.goals.create(input);
     await refreshData();
     return goal;
-  };
+  }, [repos, refreshData]);
 
-  const updateGoal = async (id: string, input: UpdateGoalInput): Promise<Goal> => {
+  const updateGoal = useCallback(async (id: string, input: UpdateGoalInput): Promise<Goal> => {
     const updated = await repos.goals.update(id, input);
     await refreshData();
     return updated;
-  };
+  }, [repos, refreshData]);
 
-  const deleteGoal = async (id: string): Promise<void> => {
+  const deleteGoal = useCallback(async (id: string): Promise<void> => {
     await repos.goals.delete(id);
     await refreshData();
-  };
+  }, [repos, refreshData]);
 
   // Insights
-  const getBehaviorStats = async (behaviorId: string, anchorDate?: string): Promise<BehaviorStats | null> => {
+  const getBehaviorStats = useCallback(async (behaviorId: string, anchorDate?: string): Promise<BehaviorStats | null> => {
     return repos.insights.getBehaviorStats(behaviorId, anchorDate);
-  };
+  }, [repos]);
 
-  const getOverallSummary = async (anchorDate?: string) => {
+  const getOverallSummary = useCallback(async (anchorDate?: string) => {
     return repos.insights.getOverallSummary(anchorDate);
-  };
+  }, [repos]);
 
-  const createBackupData = async () => {
+  const createBackupData = useCallback(async () => {
     return repos.backup.createBackup();
-  };
+  }, [repos]);
 
-  const validateBackupContent = (jsonString: string) => {
-    return repos.backup.validateBackup(jsonString);
-  };
+  const validateBackupContent = useCallback((jsonString: string, filename?: string) => {
+    return repos.backup.validateBackup(jsonString, filename);
+  }, [repos]);
 
-  const restoreBackupData = async (backup: import('@/db').BehavBackupFile, mode: 'merge' | 'replace') => {
+  const restoreBackupData = useCallback(async (backup: import('@/db').BehavBackupFile, mode: 'merge' | 'replace' = 'replace') => {
     const result = await repos.backup.restoreBackup(backup, mode);
     await refreshData();
     return result;
-  };
+  }, [repos, refreshData]);
 
-  const exportLogsCsv = async () => {
+  const exportLogsCsv = useCallback(async () => {
     return repos.backup.exportLogsToCsv();
-  };
+  }, [repos]);
 
-  const exportBehaviorsCsv = async () => {
+  const exportBehaviorsCsv = useCallback(async () => {
     return repos.backup.exportBehaviorsToCsv();
-  };
+  }, [repos]);
 
-  const getEntriesForDate = async (date: string | Date): Promise<LogEntryWithBehavior[]> => {
+  const getEntriesForDate = useCallback(async (date: string | Date): Promise<LogEntryWithBehavior[]> => {
     return repos.logEntries.getByDate(date);
-  };
+  }, [repos]);
 
-  const getSummariesForDate = async (date: string | Date): Promise<DailyBehaviorSummary[]> => {
+  const getSummariesForDate = useCallback(async (date: string | Date): Promise<DailyBehaviorSummary[]> => {
     return repos.logEntries.getDailySummaries(date);
-  };
+  }, [repos]);
+
+  const value = useMemo<BehaviorContextValue>(
+    () => ({
+      behaviors,
+      archivedBehaviors,
+      todaySummaries,
+      todayEntries,
+      goals,
+      isLoading,
+      refreshData,
+      createBehavior,
+      updateBehavior,
+      archiveBehavior,
+      unarchiveBehavior,
+      deleteBehavior,
+      quickLog,
+      createLogEntry,
+      updateLogEntry,
+      deleteLogEntry,
+      createGoal,
+      updateGoal,
+      deleteGoal,
+      getBehaviorStats,
+      getOverallSummary,
+      createBackupData,
+      validateBackupContent,
+      restoreBackupData,
+      exportLogsCsv,
+      exportBehaviorsCsv,
+      getEntriesForDate,
+      getSummariesForDate,
+    }),
+    [
+      behaviors,
+      archivedBehaviors,
+      todaySummaries,
+      todayEntries,
+      goals,
+      isLoading,
+      refreshData,
+      createBehavior,
+      updateBehavior,
+      archiveBehavior,
+      unarchiveBehavior,
+      deleteBehavior,
+      quickLog,
+      createLogEntry,
+      updateLogEntry,
+      deleteLogEntry,
+      createGoal,
+      updateGoal,
+      deleteGoal,
+      getBehaviorStats,
+      getOverallSummary,
+      createBackupData,
+      validateBackupContent,
+      restoreBackupData,
+      exportLogsCsv,
+      exportBehaviorsCsv,
+      getEntriesForDate,
+      getSummariesForDate,
+    ]
+  );
 
   return (
-    <BehaviorContext.Provider
-      value={{
-        behaviors,
-        archivedBehaviors,
-        todaySummaries,
-        todayEntries,
-        goals,
-        isLoading,
-        refreshData,
-        createBehavior,
-        updateBehavior,
-        archiveBehavior,
-        unarchiveBehavior,
-        deleteBehavior,
-        quickLog,
-        createLogEntry,
-        updateLogEntry,
-        deleteLogEntry,
-        createGoal,
-        updateGoal,
-        deleteGoal,
-        getBehaviorStats,
-        getOverallSummary,
-        createBackupData,
-        validateBackupContent,
-        restoreBackupData,
-        exportLogsCsv,
-        exportBehaviorsCsv,
-        getEntriesForDate,
-        getSummariesForDate,
-      }}
-    >
+    <BehaviorContext.Provider value={value}>
       {children}
     </BehaviorContext.Provider>
   );

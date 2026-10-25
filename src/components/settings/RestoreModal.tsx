@@ -10,15 +10,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Badge } from '@/components/common';
 import { colors, radii, shadows, spacing, typography } from '@/theme';
-import type { BehavBackupFile, RestoreResult } from '@/db';
+import type { BHFile, RestoreResult } from '@/db';
 import { formatFriendlyDate } from '@/utils/date';
 
 interface RestoreModalProps {
   visible: boolean;
-  backup: BehavBackupFile | null;
+  backup: BHFile | null;
   filename: string;
   onClose: () => void;
-  onConfirmRestore: (mode: 'merge' | 'replace') => Promise<RestoreResult>;
+  onConfirmRestore: (mode: 'replace' | 'merge') => Promise<RestoreResult>;
 }
 
 export const RestoreModal: React.FC<RestoreModalProps> = ({
@@ -28,7 +28,6 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
   onClose,
   onConfirmRestore,
 }) => {
-  const [mode, setMode] = useState<'merge' | 'replace'>('merge');
   const [isRestoring, setIsRestoring] = useState(false);
   const [result, setResult] = useState<RestoreResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +38,8 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
     setIsRestoring(true);
     setError(null);
     try {
-      const res = await onConfirmRestore(mode);
+      // Default full restore policy is atomic replace-all
+      const res = await onConfirmRestore('replace');
       setResult(res);
     } catch (err: any) {
       setError(err?.message || 'Failed to restore backup');
@@ -52,13 +52,14 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
     setResult(null);
     setError(null);
     setIsRestoring(false);
-    setMode('merge');
     onClose();
   };
 
-  const behaviorCount = backup.data.behaviors.length;
-  const logCount = backup.data.log_entries.length;
-  const goalCount = backup.data.goals.length;
+  const isV1 = !!((backup as any).habits && (backup as any).days);
+  const behaviorCount = (backup as any).habits?.length ?? (backup as any).data?.behaviors?.length ?? 0;
+  const dayCount = (backup as any).days?.length ?? (backup as any).data?.records?.length ?? 0;
+  const greenDays = (backup as any).summary?.greenDays;
+  const maxStreak = (backup as any).summary?.maxStreak;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleModalClose}>
@@ -73,34 +74,22 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
 
               <Text style={styles.title}>Restore Completed</Text>
               <Text style={styles.subtitle}>
-                Your database has been successfully updated with data from {filename}.
+                Your database and history have been successfully reconstructed from {filename}.
               </Text>
 
               <Card variant="subtle" style={styles.summaryCard}>
                 <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Restore Mode</Text>
-                  <Text style={styles.statValue}>
-                    {result.mode === 'merge' ? 'Merge (Preserved existing)' : 'Complete Replace'}
-                  </Text>
+                  <Text style={styles.statLabel}>Restore Policy</Text>
+                  <Text style={styles.statValue}>Full Replace (Clean State)</Text>
                 </View>
                 <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Behaviors Processed</Text>
+                  <Text style={styles.statLabel}>Habits Restored</Text>
                   <Text style={styles.statValue}>{result.restoredBehaviors}</Text>
                 </View>
                 <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Log Entries Restored</Text>
+                  <Text style={styles.statLabel}>Activity Records Restored</Text>
                   <Text style={styles.statValue}>{result.restoredLogs}</Text>
                 </View>
-                <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Goals Restored</Text>
-                  <Text style={styles.statValue}>{result.restoredGoals}</Text>
-                </View>
-                {result.skippedLogs > 0 && (
-                  <View style={styles.statRow}>
-                    <Text style={[styles.statLabel, { color: colors.peachText }]}>Skipped Orphaned Logs</Text>
-                    <Text style={[styles.statValue, { color: colors.peachText }]}>{result.skippedLogs}</Text>
-                  </View>
-                )}
               </Card>
 
               <Button
@@ -114,7 +103,10 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
             /* Preview & Confirmation View */
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={styles.header}>
-                <Text style={styles.title}>Preview Backup</Text>
+                <View style={styles.headerTitleRow}>
+                  <Text style={styles.title}>Preview Backup</Text>
+                  <Badge label="JSON Backup" variant="lavender" />
+                </View>
                 <TouchableOpacity onPress={handleModalClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Ionicons name="close" size={24} color={colors.textSecondary} />
                 </TouchableOpacity>
@@ -124,81 +116,52 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
                 {filename}
               </Text>
 
-              <Text style={styles.exportedText}>
-                Exported: {formatFriendlyDate(backup.exportedAt.slice(0, 10))} ({backup.exportedAt.slice(11, 16)})
-              </Text>
-
               {/* Counts Preview Card */}
               <Card variant="subtle" style={styles.previewCard}>
-                <Text style={styles.previewSectionTitle}>Records in this backup</Text>
+                <Text style={styles.previewSectionTitle}>Data in this backup</Text>
                 <View style={styles.countsRow}>
                   <View style={styles.countItem}>
                     <Text style={styles.countNumber}>{behaviorCount}</Text>
-                    <Text style={styles.countLabel}>Behaviors</Text>
+                    <Text style={styles.countLabel}>Habits</Text>
                   </View>
                   <View style={styles.countDivider} />
                   <View style={styles.countItem}>
-                    <Text style={styles.countNumber}>{logCount}</Text>
-                    <Text style={styles.countLabel}>Logs</Text>
+                    <Text style={styles.countNumber}>{dayCount}</Text>
+                    <Text style={styles.countLabel}>Days</Text>
                   </View>
-                  <View style={styles.countDivider} />
-                  <View style={styles.countItem}>
-                    <Text style={styles.countNumber}>{goalCount}</Text>
-                    <Text style={styles.countLabel}>Goals</Text>
-                  </View>
+                  {greenDays !== undefined && (
+                    <>
+                      <View style={styles.countDivider} />
+                      <View style={styles.countItem}>
+                        <Text style={styles.countNumber}>{greenDays}</Text>
+                        <Text style={styles.countLabel}>Green Days</Text>
+                      </View>
+                    </>
+                  )}
+                  {maxStreak !== undefined && (
+                    <>
+                      <View style={styles.countDivider} />
+                      <View style={styles.countItem}>
+                        <Text style={styles.countNumber}>{maxStreak}</Text>
+                        <Text style={styles.countLabel}>Max Streak</Text>
+                      </View>
+                    </>
+                  )}
                 </View>
               </Card>
 
-              {/* Mode Selection */}
-              <Text style={styles.sectionHeading}>Choose Restore Method</Text>
-
-              <TouchableOpacity
-                style={[styles.modeCard, mode === 'merge' && styles.modeCardSelected]}
-                onPress={() => setMode('merge')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.modeHeader}>
-                  <Ionicons
-                    name={mode === 'merge' ? 'radio-button-on' : 'radio-button-off'}
-                    size={20}
-                    color={mode === 'merge' ? colors.primary : colors.textTertiary}
-                  />
-                  <Text style={styles.modeTitle}>Merge (Safe & Non-Destructive)</Text>
-                  <Badge label="Recommended" variant="sage" />
-                </View>
-                <Text style={styles.modeDesc}>
-                  Adds records from this backup to your current database. Existing habits and logs will not be erased.
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modeCard, mode === 'replace' && styles.modeCardDangerSelected]}
-                onPress={() => setMode('replace')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.modeHeader}>
-                  <Ionicons
-                    name={mode === 'replace' ? 'radio-button-on' : 'radio-button-off'}
-                    size={20}
-                    color={mode === 'replace' ? colors.peachText : colors.textTertiary}
-                  />
-                  <Text style={[styles.modeTitle, mode === 'replace' && { color: colors.peachText }]}>
-                    Replace (Destructive)
-                  </Text>
-                </View>
-                <Text style={styles.modeDesc}>
-                  Completely wipes the current database and replaces all records with this backup.
-                </Text>
-              </TouchableOpacity>
-
-              {mode === 'replace' && (
-                <View style={styles.warningBox}>
-                  <Ionicons name="warning" size={18} color={colors.peachText} />
+              {/* Full Restore Policy Explanation */}
+              <View style={styles.warningBox}>
+                <Ionicons name="alert-circle" size={20} color={colors.peachText} />
+                <View style={styles.warningContent}>
+                  <Text style={styles.warningTitle}>Full Restore Notice</Text>
                   <Text style={styles.warningText}>
-                    Caution: All current records on this device will be deleted before restoring. This action cannot be undone.
+                    Restoring this backup will replace current local tracking data with the {dayCount} days
+                    and {behaviorCount} habits from this file. Your calendar, daily totals, and statistics will be
+                    recalculated automatically.
                   </Text>
                 </View>
-              )}
+              </View>
 
               {error && (
                 <View style={styles.errorBox}>
@@ -217,10 +180,8 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
                   style={styles.actionBtn}
                 />
                 <Button
-                  label={
-                    isRestoring ? 'Restoring...' : mode === 'replace' ? 'Replace All' : 'Merge & Restore'
-                  }
-                  variant={mode === 'replace' ? 'danger' : 'primary'}
+                  label={isRestoring ? 'Restoring...' : 'Replace All & Restore'}
+                  variant="danger"
                   onPress={handleRestore}
                   disabled={isRestoring}
                   loading={isRestoring}
@@ -261,6 +222,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.xs,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   title: {
     ...typography.titleMedium,
@@ -315,58 +281,27 @@ const styles = StyleSheet.create({
     height: 32,
     backgroundColor: colors.borderSubtle,
   },
-  sectionHeading: {
-    ...typography.titleSmall,
-    fontSize: 14,
-    marginBottom: spacing.xs,
-  },
-  modeCard: {
-    backgroundColor: colors.surfaceSubtle,
-    borderWidth: 1.5,
-    borderColor: colors.borderSubtle,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  modeCardSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  modeCardDangerSelected: {
-    borderColor: colors.peachText,
-    backgroundColor: colors.peach,
-  },
-  modeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-    gap: spacing.xs,
-  },
-  modeTitle: {
-    ...typography.labelLarge,
-    flex: 1,
-    marginLeft: 6,
-    fontSize: 14,
-  },
-  modeDesc: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginLeft: 26,
-    lineHeight: 18,
-  },
   warningBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: colors.peach,
-    padding: spacing.sm,
-    borderRadius: radii.sm,
-    marginBottom: spacing.sm,
-    gap: spacing.xs,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  warningContent: {
+    flex: 1,
+  },
+  warningTitle: {
+    ...typography.labelLarge,
+    color: colors.peachText,
+    marginBottom: 2,
+    fontSize: 13,
   },
   warningText: {
     ...typography.bodySmall,
     color: colors.peachText,
-    flex: 1,
     fontSize: 12,
     lineHeight: 16,
   },
@@ -388,7 +323,7 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   actionBtn: {
     flex: 1,

@@ -30,7 +30,7 @@ export default function RootLayout() {
       <SQLiteProvider
         databaseName={DATABASE_NAME}
         onInit={initializeDatabase}
-        onError={(err) => setInitError(err)}
+        onError={setInitError}
       >
         <BehaviorProvider>
           <Stack

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper, Card, Button, Badge, EmptyState } from '@/components/common';
 import { WeekBarChart } from '@/components/insights/WeekBarChart';
@@ -13,6 +14,7 @@ export default function InsightsScreen() {
   const {
     behaviors,
     goals,
+    todayEntries,
     getBehaviorStats,
     getOverallSummary,
     createGoal,
@@ -54,7 +56,13 @@ export default function InsightsScreen() {
 
   useEffect(() => {
     loadStats();
-  }, [loadStats]);
+  }, [loadStats, todayEntries, goals]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+    }, [loadStats])
+  );
 
   const handleDeleteGoal = (goal: Goal) => {
     Alert.alert(

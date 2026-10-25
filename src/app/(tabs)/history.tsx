@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper, Card, Button, Badge, EmptyState } from '@/components/common';
 import { EditLogModal } from '@/components/logging/EditLogModal';
@@ -24,6 +25,7 @@ import {
 export default function HistoryScreen() {
   const {
     behaviors,
+    todayEntries,
     getEntriesForDate,
     getSummariesForDate,
     updateLogEntry,
@@ -59,7 +61,13 @@ export default function HistoryScreen() {
 
   useEffect(() => {
     loadDateData(selectedDate);
-  }, [selectedDate, loadDateData]);
+  }, [selectedDate, loadDateData, todayEntries]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDateData(selectedDate);
+    }, [loadDateData, selectedDate])
+  );
 
   // Date Navigation
   const handlePrevDay = () => {

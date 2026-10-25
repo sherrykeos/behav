@@ -81,10 +81,11 @@ export async function exportFile(
 }
 
 /**
- * Prompts user to pick a file and reads its text content
+ * Prompts user to pick a backup file and reads its text content
+ * Accepts only standard .json backup files
  */
 export async function pickAndReadFile(
-  mimeTypes: string[] = ['application/json', 'text/json', '*/*']
+  mimeTypes: string[] = ['application/json', 'text/json', 'text/plain', '*/*']
 ): Promise<PickedFileResult> {
   try {
     const result = await DocumentPicker.getDocumentAsync({
@@ -97,6 +98,17 @@ export async function pickAndReadFile(
     }
 
     const asset = result.assets[0];
+    const filename = asset.name || '';
+    const ext = filename.toLowerCase().split('.').pop();
+
+    if (ext !== 'json') {
+      return {
+        cancelled: false,
+        filename,
+        error: `Unsupported file type (.${ext}). Only standard .json backup files can be imported.`,
+      };
+    }
+
     let content = '';
 
     if (Platform.OS === 'web') {
@@ -114,7 +126,7 @@ export async function pickAndReadFile(
 
     return {
       cancelled: false,
-      filename: asset.name,
+      filename,
       content,
     };
   } catch (err: any) {

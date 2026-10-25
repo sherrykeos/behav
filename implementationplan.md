@@ -153,26 +153,26 @@ Do not implement future-phase functionality early, except small foundations genu
 
 **Review gate:** Stop and wait for owner approval.
 
-## Phase 6 — Backup, restore, and CSV export
+## Phase 6 — Canonical JSON Backup & Restore System
 
-**Goal:** Give the owner reliable control over personal data.
+**Goal:** Give the owner reliable control over personal data using standard `.json` backup files exclusively.
 
 ### Tasks
-- [x] Export a complete, versioned JSON backup.
-- [x] Export supported records to CSV.
-- [x] Use supported Android document APIs so the owner can choose a destination.
-- [x] Validate backup files before restore.
-- [x] Preview restore contents and clearly offer merge/replace behavior.
-- [x] Ask for confirmation before destructive replacement.
-- [x] Prevent duplicate records where possible.
+- [x] Export a complete, versioned backup to standard `.json` (`Behav-Backup-YYYY-MM-DD.json`).
+- [x] Use supported Android document and sharing APIs (`public.json` UTI, `application/json` MIME type).
+- [x] Single unified "Import Backup" entry point accepting `.json` exclusively; reject custom `.bhfile` extension.
+- [x] Remove spreadsheet/CSV UI cards and actions per owner directive while preserving backend CSV export helpers.
+- [x] Validate backup format identifier (`bhfile`), version (`1`), habit definitions, days, and summaries before restore.
+- [x] Preview restore contents and require confirmation before replace-all restore.
+- [x] Atomic SQLite restore with zero partial writes on failure.
 - [x] Report successful or failed operations truthfully.
 - [x] Document that a backup kept only on the phone does not protect against phone loss.
 
 ### Acceptance criteria
-- [x] A JSON export can be restored without losing supported fields.
-- [x] CSV exports open with expected headers and values.
-- [x] Invalid files fail safely without corrupting existing data.
-- [x] Restore outcomes are clearly reported.
+- [x] A `.json` export can be restored without losing supported fields or relationships.
+- [x] Only standard `.json` files are accepted; `.bhfile` and non-JSON files are rejected safely.
+- [x] Arbitrary JSON, malformed syntax, and inconsistent summaries are rejected without corrupting data.
+- [x] Restore outcomes and preview summaries are clearly reported.
 - [x] Exported files are verified before success is displayed.
 
 **Review gate:** Stop and wait for owner approval.
@@ -238,8 +238,8 @@ Update this section after each phase. Keep entries factual and concise.
 | 3 — Behaviors and quick logging | Completed | Full behavior CRUD, active/archived management, 1-tap card logging, QuickLogModal, recent entries review and correction with SQLite persistence. |
 | 4 — History | Completed | Date navigation (prev/next/14-day strip), day summaries, grouped behavior records, retroactive logging, and record editing/deletion with zero timezone drift. |
 | 5 — Goals and insights | Completed | Independent behavior goals, 7-day & 30-day metrics, honest bad-habit adherence streaks, and proportional 7-day bar chart with verified SQLite test suite. |
-| 6 — Backup and CSV export | Completed | Versioned JSON backup (v1), RFC 4180 CSV export (logs & habits), verified file writing, preview modal with non-destructive merge and destructive replace safeguards, and device-loss protection disclosures. |
-| 7 — Historical CSV import | Not started | |
+| 6 — Backup and CSV export | Completed | Standard JSON backup system (.json exclusively), retired .bhfile, unified Import Backup action, measurement integrity definitions, strict duplicate & schema validation, atomic transaction restoration, and RFC 4180 CSV export. |
+| 7 — Historical CSV import | Deferred | Deferred per owner strategy; personal historical data will be converted to BHFile v1 format externally. |
 | 8 — Quality and Android release | Not started | |
 
 ## Required end-of-phase report
