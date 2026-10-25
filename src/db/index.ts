@@ -3,6 +3,7 @@ import { runMigrations } from './migrations';
 import { BehaviorRepository } from './repositories/behaviorRepository';
 import { LogEntryRepository } from './repositories/logEntryRepository';
 import { GoalRepository } from './repositories/goalRepository';
+import { InsightRepository } from './repositories/insightRepository';
 
 export const DATABASE_NAME = 'behav.db';
 
@@ -10,6 +11,7 @@ export interface DatabaseRepositories {
   behaviors: BehaviorRepository;
   logEntries: LogEntryRepository;
   goals: GoalRepository;
+  insights: InsightRepository;
 }
 
 /**
@@ -27,6 +29,7 @@ export function createRepositories(db: SQLiteDatabase): DatabaseRepositories {
     behaviors: new BehaviorRepository(db),
     logEntries: new LogEntryRepository(db),
     goals: new GoalRepository(db),
+    insights: new InsightRepository(db),
   };
 }
 
@@ -34,3 +37,4 @@ export * from './migrations';
 export * from './repositories/behaviorRepository';
 export * from './repositories/logEntryRepository';
 export * from './repositories/goalRepository';
+export * from './repositories/insightRepository';

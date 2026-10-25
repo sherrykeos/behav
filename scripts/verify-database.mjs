@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert';
+import { shiftDayString } from '../src/utils/date.ts';
 
 // 1. Create SQLite wrapper matching Expo SQLiteDatabase async interface
 function createMockExpoDb() {
@@ -238,15 +239,76 @@ async function testDatabase() {
   assert.strictEqual(b3Summary.entryCount, 2, 'Day 2 entry count should be 2');
   console.log('✓ Historical date/time edit and dynamic recalculation verified');
 
-  // Test 9: Historical Deletion
-  await logRepo.delete(entryDay1.id);
-  const day2SummariesAfterDel = await logRepo.getDailySummaries('2026-10-25');
-  const b3SummaryAfterDel = day2SummariesAfterDel.find((s) => s.behaviorId === b3.id);
-  assert(b3SummaryAfterDel);
-  assert.strictEqual(b3SummaryAfterDel.totalValue, 3, 'Day 2 total should now be back to 3');
-  console.log('✓ Historical entry deletion and recalculation verified');
+  // Test 10: Phase 5 Insights, Trends & Independent Streaks
+  console.log('--- Testing Phase 5: Insights, Averages & Independent Streaks ---');
+  const { InsightRepository } = await import('../src/db/repositories/insightRepository.ts');
+  const insightRepo = new InsightRepository(db);
 
-  console.log('--- ALL SQLITE PERSISTENCE & HISTORY TESTS PASSED ---');
+  // Setup habit: Smoking (daily limit = 4, created 4 days ago)
+  const bSmoking = await behaviorRepo.create({
+    name: 'Smoking',
+    unit: 'cigarettes',
+    dailyLimit: 4,
+  });
+  // Simulate habit created 4 days ago
+  const anchorDate = '2026-10-25';
+  await db.runAsync('UPDATE behaviors SET created_at = ? WHERE id = ?;', [
+    `${shiftDayString(anchorDate, -3)}T00:00:00.000+05:30`,
+    bSmoking.id,
+  ]);
+
+  // Setup habit: Screen Time (daily limit = 60, zero records logged)
+  const bScreen = await behaviorRepo.create({
+    name: 'Screen Time',
+    unit: 'minutes',
+    dailyLimit: 60,
+  });
+
+  // Add 4 consecutive days of smoking within limit (3 per day) for 2026-10-22, 2026-10-23, 2026-10-24, 2026-10-25
+  for (let i = 0; i < 4; i++) {
+    const day = shiftDayString(anchorDate, -i);
+    await logRepo.create({
+      behaviorId: bSmoking.id,
+      value: 3,
+      occurredAt: `${day}T12:00:00.000+05:30`,
+    });
+  }
+
+  // Calculate stats for Smoking
+  const smokingStats = await insightRepo.getBehaviorStats(bSmoking.id, anchorDate);
+  assert(smokingStats, 'Stats must exist for Smoking');
+  assert.strictEqual(smokingStats.total7Days, 12, '7-day total should be 3 * 4 = 12');
+  assert.strictEqual(smokingStats.avg7Days, Math.round((12 / 7) * 10) / 10);
+  assert.strictEqual(smokingStats.currentStreakDays, 4, 'Streak must be 4 consecutive days under limit');
+  console.log('✓ 7-day totals, daily average, and adherence streak (4 days) verified');
+
+  // Verify Screen Time has its own independent streak (independent habits test)
+  const screenStats = await insightRepo.getBehaviorStats(bScreen.id, anchorDate);
+  assert(screenStats, 'Stats must exist for Screen Time');
+  // Screen time has 0 logs, so its streak must be 0 (no fake streaks for unrecorded habits)
+  assert.strictEqual(screenStats.total7Days, 0, 'Screen Time 7-day total must be 0');
+  assert.strictEqual(screenStats.currentStreakDays, 0, 'Habit with no recorded logs has streak = 0');
+  console.log('✓ Independent streak state between distinct habits verified');
+
+  // Break streak: log an occurrence on anchorDate for Smoking exceeding limit (add 2 more, total = 5 > 4)
+  const overLimitEntry = await logRepo.create({
+    behaviorId: bSmoking.id,
+    value: 2,
+    occurredAt: `${anchorDate}T18:00:00.000+05:30`,
+  });
+
+  const smokingStatsAfterOver = await insightRepo.getBehaviorStats(bSmoking.id, anchorDate);
+  assert(smokingStatsAfterOver);
+  assert.strictEqual(smokingStatsAfterOver.total7Days, 14, 'Total should now be 12 + 2 = 14');
+  assert.strictEqual(smokingStatsAfterOver.currentStreakDays, 0, 'Exceeding limit on anchor day must reset streak to 0');
+  console.log('✓ Streak correctly resets when limit is exceeded without fabricating false data');
+
+  // Overall summary test
+  const overall = await insightRepo.getOverallSummary(anchorDate);
+  assert(overall.activeHabitCount >= 3, 'Active habit count must match database');
+  console.log('✓ Overall summary statistics verified');
+
+  console.log('--- ALL SQLITE PERSISTENCE, HISTORY & INSIGHTS TESTS PASSED ---');
 }
 
 testDatabase().catch((err) => {

@@ -137,19 +137,19 @@ Do not implement future-phase functionality early, except small foundations genu
 **Goal:** Provide useful feedback without noisy or misleading gamification.
 
 ### Tasks
-- [ ] Define goal types and their rules explicitly before implementing calculations.
-- [ ] Support independent goals associated with a behavior where appropriate.
-- [ ] Implement basic daily, weekly, and monthly totals and trends.
-- [ ] Implement averages and streaks based on documented goal rules.
-- [ ] Distinguish missing data from a confirmed missed goal where possible.
-- [ ] Use simple, legible charts only where they add insight.
+- [x] Define goal types and their rules explicitly before implementing calculations.
+- [x] Support independent goals associated with a behavior where appropriate.
+- [x] Implement basic daily, weekly, and monthly totals and trends.
+- [x] Implement averages and streaks based on documented goal rules.
+- [x] Distinguish missing data from a confirmed missed goal where possible.
+- [x] Use simple, legible charts only where they add insight.
 
 ### Acceptance criteria
-- [ ] Calculations are tested against known examples.
-- [ ] Different goals do not accidentally share streak state.
-- [ ] Missing records do not produce misleading claims.
-- [ ] Empty datasets render gracefully.
-- [ ] Charts use real data and readable labels.
+- [x] Calculations are tested against known examples.
+- [x] Different goals do not accidentally share streak state.
+- [x] Missing records do not produce misleading claims.
+- [x] Empty datasets render gracefully.
+- [x] Charts use real data and readable labels.
 
 **Review gate:** Stop and wait for owner approval.
 
@@ -237,7 +237,7 @@ Update this section after each phase. Keep entries factual and concise.
 | 2 — SQLite persistence | Completed | Versioned migrations, schema (behaviors, log_entries, goals), typed repositories, validation, and integration tests passing. |
 | 3 — Behaviors and quick logging | Completed | Full behavior CRUD, active/archived management, 1-tap card logging, QuickLogModal, recent entries review and correction with SQLite persistence. |
 | 4 — History | Completed | Date navigation (prev/next/14-day strip), day summaries, grouped behavior records, retroactive logging, and record editing/deletion with zero timezone drift. |
-| 5 — Goals and insights | Not started | |
+| 5 — Goals and insights | Completed | Independent behavior goals, 7-day & 30-day metrics, honest bad-habit adherence streaks, and proportional 7-day bar chart with verified SQLite test suite. |
 | 6 — Backup and CSV export | Not started | |
 | 7 — Historical CSV import | Not started | |
 | 8 — Quality and Android release | Not started | |

@@ -9,8 +9,15 @@ import {
   type UpdateBehaviorInput,
   type CreateLogEntryInput,
   type UpdateLogEntryInput,
+  type Goal,
+  type CreateGoalInput,
+  type UpdateGoalInput,
 } from '@/types/database';
-import { createRepositories, type DatabaseRepositories } from '@/db';
+import {
+  createRepositories,
+  type DatabaseRepositories,
+  type BehaviorStats,
+} from '@/db';
 import { toDayString } from '@/utils/date';
 
 interface BehaviorContextValue {
@@ -18,6 +25,7 @@ interface BehaviorContextValue {
   archivedBehaviors: Behavior[];
   todaySummaries: DailyBehaviorSummary[];
   todayEntries: LogEntryWithBehavior[];
+  goals: Goal[];
   isLoading: boolean;
   refreshData: () => Promise<void>;
   // Behavior operations
@@ -31,6 +39,13 @@ interface BehaviorContextValue {
   createLogEntry: (input: CreateLogEntryInput) => Promise<LogEntry>;
   updateLogEntry: (id: string, input: UpdateLogEntryInput) => Promise<LogEntry>;
   deleteLogEntry: (id: string) => Promise<void>;
+  // Goals operations
+  createGoal: (input: CreateGoalInput) => Promise<Goal>;
+  updateGoal: (id: string, input: UpdateGoalInput) => Promise<Goal>;
+  deleteGoal: (id: string) => Promise<void>;
+  // Insights operations
+  getBehaviorStats: (behaviorId: string, anchorDate?: string) => Promise<BehaviorStats | null>;
+  getOverallSummary: (anchorDate?: string) => Promise<{ activeHabitCount: number; totalLogsToday: number; totalLogs7Days: number }>;
   // Utilities
   getEntriesForDate: (date: string | Date) => Promise<LogEntryWithBehavior[]>;
   getSummariesForDate: (date: string | Date) => Promise<DailyBehaviorSummary[]>;
@@ -46,15 +61,17 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [archivedBehaviors, setArchivedBehaviors] = useState<Behavior[]>([]);
   const [todaySummaries, setTodaySummaries] = useState<DailyBehaviorSummary[]>([]);
   const [todayEntries, setTodayEntries] = useState<LogEntryWithBehavior[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshData = useCallback(async () => {
     try {
       const today = toDayString();
-      const [allBehaviors, summaries, entries] = await Promise.all([
+      const [allBehaviors, summaries, entries, allGoals] = await Promise.all([
         repos.behaviors.getAll(true),
         repos.logEntries.getDailySummaries(today),
         repos.logEntries.getByDate(today),
+        repos.goals.getAll(false),
       ]);
 
       const active = allBehaviors.filter((b) => b.archivedAt === null);
@@ -64,6 +81,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setArchivedBehaviors(archived);
       setTodaySummaries(summaries);
       setTodayEntries(entries);
+      setGoals(allGoals);
     } catch (error) {
       console.error('Error refreshing behavior data from SQLite:', error);
     } finally {
@@ -131,6 +149,33 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     await refreshData();
   };
 
+  // Goals CRUD
+  const createGoal = async (input: CreateGoalInput): Promise<Goal> => {
+    const goal = await repos.goals.create(input);
+    await refreshData();
+    return goal;
+  };
+
+  const updateGoal = async (id: string, input: UpdateGoalInput): Promise<Goal> => {
+    const updated = await repos.goals.update(id, input);
+    await refreshData();
+    return updated;
+  };
+
+  const deleteGoal = async (id: string): Promise<void> => {
+    await repos.goals.delete(id);
+    await refreshData();
+  };
+
+  // Insights
+  const getBehaviorStats = async (behaviorId: string, anchorDate?: string): Promise<BehaviorStats | null> => {
+    return repos.insights.getBehaviorStats(behaviorId, anchorDate);
+  };
+
+  const getOverallSummary = async (anchorDate?: string) => {
+    return repos.insights.getOverallSummary(anchorDate);
+  };
+
   const getEntriesForDate = async (date: string | Date): Promise<LogEntryWithBehavior[]> => {
     return repos.logEntries.getByDate(date);
   };
@@ -146,6 +191,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         archivedBehaviors,
         todaySummaries,
         todayEntries,
+        goals,
         isLoading,
         refreshData,
         createBehavior,
@@ -157,6 +203,11 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         createLogEntry,
         updateLogEntry,
         deleteLogEntry,
+        createGoal,
+        updateGoal,
+        deleteGoal,
+        getBehaviorStats,
+        getOverallSummary,
         getEntriesForDate,
         getSummariesForDate,
       }}
