@@ -1,18 +1,67 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { Stack } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SQLiteProvider } from 'expo-sqlite';
+import { colors, spacing, typography } from '@/theme';
+import { DATABASE_NAME, initializeDatabase } from '@/db';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+export default function RootLayout() {
+  const [initError, setInitError] = useState<Error | null>(null);
 
-SplashScreen.preventAutoHideAsync();
+  if (initError) {
+    return (
+      <SafeAreaProvider>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Database Error</Text>
+          <Text style={styles.errorMessage}>
+            Failed to initialize local SQLite storage:
+            {'\n'}
+            {initError.message}
+          </Text>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <SQLiteProvider
+        databaseName={DATABASE_NAME}
+        onInit={initializeDatabase}
+        onError={(err) => setInitError(err)}
+      >
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bg },
+            animation: 'fade',
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        </Stack>
+      </SQLiteProvider>
+    </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  errorContainer: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  errorTitle: {
+    ...typography.titleMedium,
+    color: colors.danger,
+    marginBottom: spacing.sm,
+  },
+  errorMessage: {
+    ...typography.bodyMedium,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+});
