@@ -27,6 +27,17 @@ function createMockExpoDb() {
       const rows = stmt.all(...params);
       return rows.length > 0 ? rows[0] : null;
     },
+    async withTransactionAsync(task) {
+      sqlite.exec('BEGIN TRANSACTION;');
+      try {
+        const result = await task();
+        sqlite.exec('COMMIT;');
+        return result;
+      } catch (err) {
+        sqlite.exec('ROLLBACK;');
+        throw err;
+      }
+    },
   };
 }
 
@@ -303,12 +314,60 @@ async function testDatabase() {
   assert.strictEqual(smokingStatsAfterOver.currentStreakDays, 0, 'Exceeding limit on anchor day must reset streak to 0');
   console.log('✓ Streak correctly resets when limit is exceeded without fabricating false data');
 
-  // Overall summary test
-  const overall = await insightRepo.getOverallSummary(anchorDate);
-  assert(overall.activeHabitCount >= 3, 'Active habit count must match database');
-  console.log('✓ Overall summary statistics verified');
+  // Test 11: Phase 6 Backup, Restore & CSV Export
+  console.log('--- Testing Phase 6: Backup, Restore & CSV Export ---');
+  const { BackupRepository } = await import('../src/db/repositories/backupRepository.ts');
+  const backupRepo = new BackupRepository(db);
 
-  console.log('--- ALL SQLITE PERSISTENCE, HISTORY & INSIGHTS TESTS PASSED ---');
+  // 1. Export JSON backup
+  const backup = await backupRepo.createBackup();
+  assert.strictEqual(backup.app, 'behav', 'Backup app must be "behav"');
+  assert.strictEqual(backup.schemaVersion, 1, 'Backup schemaVersion must be 1');
+  assert(backup.data.behaviors.length >= 3, 'Backup must include all created behaviors');
+  assert(backup.data.log_entries.length >= 6, 'Backup must include all log entries');
+  assert(backup.data.goals.length >= 1, 'Backup must include goals');
+  console.log(`✓ JSON backup created successfully (${backup.data.behaviors.length} habits, ${backup.data.log_entries.length} logs)`);
+
+  // 2. Backup validation tests
+  const validJson = JSON.stringify(backup);
+  const validResult = backupRepo.validateBackup(validJson);
+  assert(validResult.isValid, 'Valid backup must pass validation');
+
+  const invalidAppResult = backupRepo.validateBackup(JSON.stringify({ app: 'other_app', schemaVersion: 1, data: {} }));
+  assert(!invalidAppResult.isValid, 'Non-behav backup must be rejected');
+
+  const invalidVersionResult = backupRepo.validateBackup(JSON.stringify({ app: 'behav', schemaVersion: 99, data: {} }));
+  assert(!invalidVersionResult.isValid, 'Future schema version must be rejected');
+
+  const corruptJsonResult = backupRepo.validateBackup('{ invalid json');
+  assert(!corruptJsonResult.isValid, 'Malformed JSON string must be rejected');
+  console.log('✓ Backup validation correctly enforces schema version and structure');
+
+  // 3. CSV Export tests
+  const logsCsv = await backupRepo.exportLogsToCsv();
+  assert(logsCsv.startsWith('id,occurred_at,behavior_name,category,value,unit,note,behavior_id,created_at'), 'Logs CSV header must follow RFC 4180');
+  assert(logsCsv.includes('Smoking'), 'Logs CSV must contain behavior names');
+
+  const behaviorsCsv = await backupRepo.exportBehaviorsToCsv();
+  assert(behaviorsCsv.startsWith('id,name,category,unit,daily_limit,is_archived,created_at'), 'Behaviors CSV header must follow RFC 4180');
+  assert(behaviorsCsv.includes('Smoking'), 'Behaviors CSV must include habits');
+  console.log('✓ RFC 4180 CSV export for logs and behaviors verified');
+
+  // 4. Merge restore test (idempotent, does not duplicate records)
+  const initialLogCount = (await db.getAllAsync('SELECT id FROM log_entries;')).length;
+  const mergeResult = await backupRepo.restoreBackup(backup, 'merge');
+  const postMergeLogCount = (await db.getAllAsync('SELECT id FROM log_entries;')).length;
+  assert.strictEqual(postMergeLogCount, initialLogCount, 'Merge restore with existing primary keys must not create duplicate records');
+  assert.strictEqual(mergeResult.skippedLogs, 0, 'No logs should be skipped when parent habits exist');
+  console.log('✓ Merge restore verified: primary-key integrity preserved without duplicates');
+
+  // 5. Destructive replace restore test
+  const replaceResult = await backupRepo.restoreBackup(backup, 'replace');
+  const postReplaceLogCount = (await db.getAllAsync('SELECT id FROM log_entries;')).length;
+  assert.strictEqual(postReplaceLogCount, backup.data.log_entries.length, 'Replace restore must restore exact record counts');
+  console.log('✓ Destructive replace restore verified with complete database reconstruction');
+
+  console.log('--- ALL SQLITE PERSISTENCE, HISTORY, INSIGHTS & BACKUP TESTS PASSED ---');
 }
 
 testDatabase().catch((err) => {

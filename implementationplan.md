@@ -158,22 +158,22 @@ Do not implement future-phase functionality early, except small foundations genu
 **Goal:** Give the owner reliable control over personal data.
 
 ### Tasks
-- [ ] Export a complete, versioned JSON backup.
-- [ ] Export supported records to CSV.
-- [ ] Use supported Android document APIs so the owner can choose a destination.
-- [ ] Validate backup files before restore.
-- [ ] Preview restore contents and clearly offer merge/replace behavior.
-- [ ] Ask for confirmation before destructive replacement.
-- [ ] Prevent duplicate records where possible.
-- [ ] Report successful or failed operations truthfully.
-- [ ] Document that a backup kept only on the phone does not protect against phone loss.
+- [x] Export a complete, versioned JSON backup.
+- [x] Export supported records to CSV.
+- [x] Use supported Android document APIs so the owner can choose a destination.
+- [x] Validate backup files before restore.
+- [x] Preview restore contents and clearly offer merge/replace behavior.
+- [x] Ask for confirmation before destructive replacement.
+- [x] Prevent duplicate records where possible.
+- [x] Report successful or failed operations truthfully.
+- [x] Document that a backup kept only on the phone does not protect against phone loss.
 
 ### Acceptance criteria
-- [ ] A JSON export can be restored without losing supported fields.
-- [ ] CSV exports open with expected headers and values.
-- [ ] Invalid files fail safely without corrupting existing data.
-- [ ] Restore outcomes are clearly reported.
-- [ ] Exported files are verified before success is displayed.
+- [x] A JSON export can be restored without losing supported fields.
+- [x] CSV exports open with expected headers and values.
+- [x] Invalid files fail safely without corrupting existing data.
+- [x] Restore outcomes are clearly reported.
+- [x] Exported files are verified before success is displayed.
 
 **Review gate:** Stop and wait for owner approval.
 
@@ -238,7 +238,7 @@ Update this section after each phase. Keep entries factual and concise.
 | 3 — Behaviors and quick logging | Completed | Full behavior CRUD, active/archived management, 1-tap card logging, QuickLogModal, recent entries review and correction with SQLite persistence. |
 | 4 — History | Completed | Date navigation (prev/next/14-day strip), day summaries, grouped behavior records, retroactive logging, and record editing/deletion with zero timezone drift. |
 | 5 — Goals and insights | Completed | Independent behavior goals, 7-day & 30-day metrics, honest bad-habit adherence streaks, and proportional 7-day bar chart with verified SQLite test suite. |
-| 6 — Backup and CSV export | Not started | |
+| 6 — Backup and CSV export | Completed | Versioned JSON backup (v1), RFC 4180 CSV export (logs & habits), verified file writing, preview modal with non-destructive merge and destructive replace safeguards, and device-loss protection disclosures. |
 | 7 — Historical CSV import | Not started | |
 | 8 — Quality and Android release | Not started | |
 

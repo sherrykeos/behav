@@ -46,6 +46,12 @@ interface BehaviorContextValue {
   // Insights operations
   getBehaviorStats: (behaviorId: string, anchorDate?: string) => Promise<BehaviorStats | null>;
   getOverallSummary: (anchorDate?: string) => Promise<{ activeHabitCount: number; totalLogsToday: number; totalLogs7Days: number }>;
+  // Backup & Restore operations
+  createBackupData: () => Promise<import('@/db').BehavBackupFile>;
+  validateBackupContent: (jsonString: string) => { isValid: boolean; error?: string; backup?: import('@/db').BehavBackupFile };
+  restoreBackupData: (backup: import('@/db').BehavBackupFile, mode: 'merge' | 'replace') => Promise<import('@/db').RestoreResult>;
+  exportLogsCsv: () => Promise<string>;
+  exportBehaviorsCsv: () => Promise<string>;
   // Utilities
   getEntriesForDate: (date: string | Date) => Promise<LogEntryWithBehavior[]>;
   getSummariesForDate: (date: string | Date) => Promise<DailyBehaviorSummary[]>;
@@ -176,6 +182,28 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return repos.insights.getOverallSummary(anchorDate);
   };
 
+  const createBackupData = async () => {
+    return repos.backup.createBackup();
+  };
+
+  const validateBackupContent = (jsonString: string) => {
+    return repos.backup.validateBackup(jsonString);
+  };
+
+  const restoreBackupData = async (backup: import('@/db').BehavBackupFile, mode: 'merge' | 'replace') => {
+    const result = await repos.backup.restoreBackup(backup, mode);
+    await refreshData();
+    return result;
+  };
+
+  const exportLogsCsv = async () => {
+    return repos.backup.exportLogsToCsv();
+  };
+
+  const exportBehaviorsCsv = async () => {
+    return repos.backup.exportBehaviorsToCsv();
+  };
+
   const getEntriesForDate = async (date: string | Date): Promise<LogEntryWithBehavior[]> => {
     return repos.logEntries.getByDate(date);
   };
@@ -208,6 +236,11 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         deleteGoal,
         getBehaviorStats,
         getOverallSummary,
+        createBackupData,
+        validateBackupContent,
+        restoreBackupData,
+        exportLogsCsv,
+        exportBehaviorsCsv,
         getEntriesForDate,
         getSummariesForDate,
       }}
