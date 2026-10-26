@@ -98,11 +98,11 @@ const styles = StyleSheet.create({
     height: 16,
   },
   valueLabelToday: {
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
     fontWeight: '700',
   },
   valueLabelOver: {
-    color: colors.peachText,
+    color: colors.accentActivityDark,
     fontWeight: '700',
   },
   barTrack: {
@@ -114,18 +114,18 @@ const styles = StyleSheet.create({
   barFill: {
     width: '100%',
     borderRadius: radii.sm,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.chartBar,
   },
   barZero: {
     backgroundColor: colors.borderSubtle,
   },
   barToday: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.accentPrimaryDark,
   },
   barOverLimit: {
-    backgroundColor: colors.peach,
+    backgroundColor: colors.accentActivitySubtle,
     borderWidth: 1,
-    borderColor: colors.peachText,
+    borderColor: colors.accentActivityDark,
   },
   dayLabel: {
     ...typography.labelSmall,
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   dayLabelToday: {
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
     fontWeight: '700',
   },
   limitLegend: {
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: radii.full,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.chartLimitDot,
   },
   limitLegendText: {
     ...typography.bodySmall,

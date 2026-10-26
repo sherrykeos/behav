@@ -43,9 +43,24 @@ interface BehaviorContextValue {
   createGoal: (input: CreateGoalInput) => Promise<Goal>;
   updateGoal: (id: string, input: UpdateGoalInput) => Promise<Goal>;
   deleteGoal: (id: string) => Promise<void>;
-  // Insights operations
   getBehaviorStats: (behaviorId: string, anchorDate?: string) => Promise<BehaviorStats | null>;
   getOverallSummary: (anchorDate?: string) => Promise<{ activeHabitCount: number; totalLogsToday: number; totalLogs7Days: number }>;
+  getHomeDashboardStats: (anchorDate?: string) => Promise<{
+    greenDaysMonth: number;
+    currentMonthStreak: number;
+    maxAllTimeStreak: number;
+    monthDays: {
+      date: string;
+      dayNumber: number;
+      dayOfWeek: number;
+      status: 'green' | 'logged' | 'future';
+      isToday: boolean;
+    }[];
+    monthName: string;
+    monthOffset: number;
+  }>;
+  getMultiHabitWeekData: (anchorDate?: string) => Promise<import('@/db').MultiHabitWeekData>;
+  getUnifiedStats: (anchorDate?: string) => Promise<import('@/db').UnifiedStatsData>;
   // Backup & Restore operations
   createBackupData: () => Promise<import('@/db').BehavBackupFile>;
   validateBackupContent: (jsonString: string, filename?: string) => { isValid: boolean; error?: string; backup?: import('@/db').BehavBackupFile };
@@ -182,6 +197,18 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return repos.insights.getOverallSummary(anchorDate);
   }, [repos]);
 
+  const getHomeDashboardStats = useCallback(async (anchorDate?: string) => {
+    return repos.insights.getHomeDashboardStats(anchorDate);
+  }, [repos]);
+
+  const getMultiHabitWeekData = useCallback(async (anchorDate?: string) => {
+    return repos.insights.getMultiHabitWeekData(anchorDate);
+  }, [repos]);
+
+  const getUnifiedStats = useCallback(async (anchorDate?: string) => {
+    return repos.insights.getUnifiedStats(anchorDate);
+  }, [repos]);
+
   const createBackupData = useCallback(async () => {
     return repos.backup.createBackup();
   }, [repos]);
@@ -235,6 +262,9 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       deleteGoal,
       getBehaviorStats,
       getOverallSummary,
+      getHomeDashboardStats,
+      getMultiHabitWeekData,
+      getUnifiedStats,
       createBackupData,
       validateBackupContent,
       restoreBackupData,
@@ -265,6 +295,9 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       deleteGoal,
       getBehaviorStats,
       getOverallSummary,
+      getHomeDashboardStats,
+      getMultiHabitWeekData,
+      getUnifiedStats,
       createBackupData,
       validateBackupContent,
       restoreBackupData,
