@@ -104,6 +104,53 @@ export function calculateMaxStreakFromDays(
 }
 
 /**
+ * Calculates max streak and records the starting and ending date of the streak.
+ */
+export function calculateMaxStreakWithDates(
+  dailyRecords: { date: string; isGreen: boolean }[]
+): { maxStreak: number; startDate: string | null; endDate: string | null } {
+  if (!dailyRecords || dailyRecords.length === 0) {
+    return { maxStreak: 0, startDate: null, endDate: null };
+  }
+
+  let currentStreak = 0;
+  let currentStart: string | null = null;
+  let maxStreak = 0;
+  let maxStart: string | null = null;
+  let maxEnd: string | null = null;
+  let prevDate: string | null = null;
+
+  for (const record of dailyRecords) {
+    if (record.isGreen) {
+      if (prevDate === null) {
+        currentStreak = 1;
+        currentStart = record.date;
+      } else {
+        const expectedNextDate = shiftDayString(prevDate, 1);
+        if (expectedNextDate === record.date) {
+          currentStreak += 1;
+        } else {
+          currentStreak = 1;
+          currentStart = record.date;
+        }
+      }
+      if (currentStreak > maxStreak) {
+        maxStreak = currentStreak;
+        maxStart = currentStart;
+        maxEnd = record.date;
+      }
+    } else {
+      currentStreak = 0;
+      currentStart = null;
+    }
+
+    prevDate = record.date;
+  }
+
+  return { maxStreak, startDate: maxStart, endDate: maxEnd };
+}
+
+/**
  * Calculates the canonical BHFile v1 summary from habits and days.
  * The summary is derived data, never the source of truth.
  */

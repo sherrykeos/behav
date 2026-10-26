@@ -21,13 +21,14 @@ These instructions apply to any coding agent or assistant working on Behav.
 - When blocked, ask one clear question instead of making a consequential guess.
 
 ## Product and design rules
-- Follow `context.md` and `prd.md`.
-- Use the supplied reference image for soft visual direction: warm cream, pastel accents, rounded surfaces, gentle shadows, generous spacing, and a calm tone.
+- Follow `docs/DESIGN_SYSTEM.md`, `context.md`, and `prd.md`.
+- **Mandatory Dark Theme**: All future UI and visual development MUST strictly follow the dark theme design system in `docs/DESIGN_SYSTEM.md` and use shared tokens from `@/theme`.
+- Official palette: Obsidian (`#101412`), Graphite (`#222925`), Electric Mint (`#B9F6CA`), Signal Amber (`#FF9F43`), and Warm Ivory (`#F4F2EA`).
 - Keep text readable and controls easy to tap on Android.
-- Maintain accessible contrast; decorative softness must not reduce legibility.
+- Maintain accessible contrast; dark surfaces must maintain high legibility.
 - Avoid overcomplicated dashboards, excessive cards, neon palettes, heavy gradients, and visually noisy charts.
 - Make quick logging the central interaction.
-- Use neutral, non-shaming language for behavior tracking.
+- Use neutral, non-shaming language for behavior tracking (Electric Mint for green days, Signal Amber for recorded activity; never red for habit setbacks).
 
 ## Technical rules
 - Use Expo, React Native, and TypeScript.
@@ -68,11 +69,11 @@ These rules are mandatory. The goal is a thoughtful, usable product—not a gene
 - Empty states must be honest, useful, and designed intentionally.
 - Never claim tests, commands, builds, or device checks passed unless they were actually run and verified.
 2. Design must have intent
-- Treat the provided reference image as inspiration for warmth and composition, not as a template to copy.
-- Behav's direction: warm cream/ivory surfaces, soft periwinkle, muted lavender, peach and sage accents, rounded shapes, gentle depth, generous spacing, calm typography, and quiet visual hierarchy.
+- All screens and components must follow `docs/DESIGN_SYSTEM.md`.
+- Behav's visual direction: dark Obsidian canvas (`#101412`), elevated Graphite surfaces (`#222925`), Electric Mint accents (`#B9F6CA`), Signal Amber activity indicators (`#FF9F43`), Warm Ivory text (`#F4F2EA`), generous spacing, calm typography, and quiet visual hierarchy.
 - The product must feel specific to behavior tracking. Do not make it look like a generic finance dashboard, SaaS admin panel, AI chat app, or default component-library demo.
 - Every screen must have one clear primary purpose and one obvious next action.
-- Establish a small design system before styling multiple screens: colors, type scale, spacing scale, radii, elevation, icon sizes, and component states. Reuse tokens instead of inventing new values screen by screen.
+- Use the shared design tokens from `src/theme/tokens.ts` exclusively. Reuse tokens instead of inventing new values screen by screen.
 - Use gradients, illustrations, blur, shadows, and decoration sparingly. They must support hierarchy, not hide weak layout.
 - Use real, consistent icons from one icon family. Never mix emoji, random icon packs, and text glyphs as substitutes for interface icons.
 - No arbitrary floating elements, decorative pills, meaningless badges, fake progress rings, or cards that exist only to fill space.

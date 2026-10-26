@@ -202,9 +202,9 @@ export default function SettingsScreen() {
           >
             <View style={styles.rowIcon}>
               {isExporting ? (
-                <ActivityIndicator size="small" color={colors.primary} />
+                <ActivityIndicator size="small" color={colors.accentPrimaryDark} />
               ) : (
-                <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
+                <Ionicons name="cloud-upload-outline" size={20} color={colors.accentPrimaryDark} />
               )}
             </View>
             <View style={styles.rowContent}>
@@ -227,9 +227,9 @@ export default function SettingsScreen() {
           >
             <View style={styles.rowIcon}>
               {isReadingFile ? (
-                <ActivityIndicator size="small" color={colors.primary} />
+                <ActivityIndicator size="small" color={colors.accentPrimaryDark} />
               ) : (
-                <Ionicons name="cloud-download-outline" size={20} color={colors.primary} />
+                <Ionicons name="cloud-download-outline" size={20} color={colors.accentPrimaryDark} />
               )}
             </View>
             <View style={styles.rowContent}>
@@ -257,7 +257,7 @@ export default function SettingsScreen() {
       {/* Section 3: Data Safety Notice */}
       <Card variant="subtle" style={styles.contentCard}>
         <View style={styles.noticeHeader}>
-          <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
+          <Ionicons name="shield-checkmark-outline" size={20} color={colors.accentPrimaryDark} />
           <Text style={styles.infoTitle}>Data Ownership & Device Safety</Text>
         </View>
         <Text style={styles.infoText}>
@@ -328,10 +328,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   feedbackSuccess: {
-    backgroundColor: colors.sage,
+    backgroundColor: colors.accentPrimarySubtle,
+    borderWidth: 1,
+    borderColor: colors.accentPrimary,
   },
   feedbackError: {
-    backgroundColor: colors.peach,
+    backgroundColor: colors.dangerLight,
+    borderWidth: 1,
+    borderColor: colors.danger,
   },
   feedbackText: {
     ...typography.bodySmall,
@@ -369,7 +373,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: radii.sm,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.accentPrimarySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
@@ -419,7 +423,9 @@ const styles = StyleSheet.create({
   warningCallout: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: colors.peach,
+    backgroundColor: colors.accentActivitySubtle,
+    borderWidth: 1,
+    borderColor: colors.accentActivity,
     borderRadius: radii.sm,
     padding: spacing.sm,
     marginTop: spacing.md,
@@ -427,7 +433,7 @@ const styles = StyleSheet.create({
   },
   warningCalloutText: {
     ...typography.bodySmall,
-    color: colors.peachText,
+    color: colors.textPrimary,
     flex: 1,
     fontSize: 12,
     lineHeight: 16,

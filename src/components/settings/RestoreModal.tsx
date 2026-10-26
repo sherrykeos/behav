@@ -69,7 +69,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
             /* Success View */
             <View style={styles.content}>
               <View style={styles.successIconContainer}>
-                <Ionicons name="checkmark-circle" size={48} color={colors.sageText} />
+                <Ionicons name="checkmark-circle" size={48} color={colors.accentPrimaryDark} />
               </View>
 
               <Text style={styles.title}>Restore Completed</Text>
@@ -199,7 +199,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(32, 30, 38, 0.55)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.md,
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
   },
   filenameText: {
     ...typography.labelLarge,
-    color: colors.primary,
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   exportedText: {

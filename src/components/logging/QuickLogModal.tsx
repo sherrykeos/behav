@@ -231,7 +231,7 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(32, 30, 38, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'flex-end',
   },
   sheetContainer: {
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   },
   unitHint: {
     ...typography.bodySmall,
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
     fontWeight: '600',
   },
   emptyNote: {
@@ -314,8 +314,8 @@ const styles = StyleSheet.create({
     minWidth: 100,
   },
   behaviorChipActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
+    backgroundColor: colors.accentPrimarySubtle,
+    borderColor: colors.accentPrimaryDark,
   },
   behaviorChipText: {
     ...typography.labelLarge,
@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   behaviorChipTextActive: {
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
   },
   chipsRow: {
     flexDirection: 'row',
@@ -342,8 +342,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   amountChipActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
+    backgroundColor: colors.accentPrimarySubtle,
+    borderColor: colors.accentPrimaryDark,
   },
   amountChipText: {
     ...typography.labelLarge,
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   amountChipTextActive: {
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
     fontWeight: '700',
   },
   input: {

@@ -247,7 +247,7 @@ export const GoalModal: React.FC<GoalModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(32, 30, 38, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'flex-end',
   },
   sheetContainer: {
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   },
   unitHint: {
     ...typography.bodySmall,
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
     fontWeight: '600',
   },
   emptyNote: {
@@ -330,8 +330,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   chipActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
+    backgroundColor: colors.accentPrimarySubtle,
+    borderColor: colors.accentPrimaryDark,
   },
   chipText: {
     ...typography.labelLarge,
@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   chipTextActive: {
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
   },
   typeRow: {
     flexDirection: 'row',
@@ -355,8 +355,8 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
   },
   typeOptionActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
+    backgroundColor: colors.accentPrimarySubtle,
+    borderColor: colors.accentPrimaryDark,
   },
   typeTitle: {
     ...typography.labelLarge,
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   typeTitleActive: {
-    color: colors.primary,
+    color: colors.accentPrimaryDark,
   },
   typeDesc: {
     ...typography.bodySmall,
