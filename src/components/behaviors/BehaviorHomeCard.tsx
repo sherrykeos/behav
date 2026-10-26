@@ -88,7 +88,7 @@ export const BehaviorHomeCard: React.FC<BehaviorHomeCardProps> = ({
           hitSlop={8}
           style={({ pressed }) => [styles.quickAddButton, pressed && styles.quickAddButtonPressed]}
         >
-          <Ionicons name="add" size={24} color={colors.primary} />
+          <Ionicons name="add" size={24} color={colors.accentPrimary} />
         </Pressable>
       </Pressable>
     </Card>
@@ -157,17 +157,17 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.accentPrimaryDark,
     borderRadius: radii.full,
   },
   progressFillReached: {
-    backgroundColor: colors.sageText,
+    backgroundColor: colors.accentActivityDark,
   },
   quickAddButton: {
     width: 44,
     height: 44,
     borderRadius: radii.full,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.accentPrimarySubtle,
     alignItems: 'center',
     justifyContent: 'center',
   },
