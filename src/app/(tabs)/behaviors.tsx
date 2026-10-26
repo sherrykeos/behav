@@ -136,7 +136,7 @@ export default function BehaviorsScreen() {
               <Ionicons
                 name={activeTab === 'active' ? 'list-outline' : 'archive-outline'}
                 size={26}
-                color={colors.primary}
+                color={colors.textPrimary}
               />
             </View>
             <Text style={styles.emptyTitle}>
@@ -218,7 +218,7 @@ export default function BehaviorsScreen() {
                     onPress={() => handleUnarchive(behavior)}
                     variant="secondary"
                     size="sm"
-                    icon={<Ionicons name="refresh-outline" size={14} color={colors.primary} />}
+                    icon={<Ionicons name="refresh-outline" size={14} color={colors.textPrimary} />}
                   />
                   <Button
                     label="Delete Permanently"
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   tabButtonTextActive: {
-    color: colors.primary,
+    color: colors.textPrimary,
   },
   emptyCard: {
     marginBottom: spacing.lg,
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: radii.full,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.accentPrimarySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
