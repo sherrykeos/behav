@@ -1,45 +1,208 @@
 /**
- * Behav Design System Tokens
- * Derived from context.md and the design reference:
- * Warm ivory / cream base, soft lavender, peach, sage, and periwinkle accents.
+ * Behav Design System Tokens — Behav v1 Brand System (Dark Theme Default)
+ *
+ * Core Brand Palette:
+ * - brand.obsidian: #101412 (Primary brand dark, dark-mode foundation)
+ * - brand.graphite:#222925 (Dark elevated surfaces, cards, navigation)
+ * - brand.mint:     #B9F6CA (Electric Mint: primary accent, green days, progress)
+ * - brand.amber:    #FF9F43 (Signal Amber: recorded habit activity, attention)
+ * - brand.ivory:    #F4F2EA (Warm Ivory: primary text, high-emphasis content)
  */
 
-export const colors = {
+export const brand = {
+  obsidian: '#101412',
+  mint: '#B9F6CA',
+  amber: '#FF9F43',
+  graphite: '#222925',
+  ivory: '#F4F2EA',
+} as const;
+
+export interface ThemeColors {
+  // Brand foundation
+  brand: typeof brand;
+
   // Base Surfaces
-  bg: '#FAF7F2',              // Warm ivory / cream background
-  surface: '#FFFFFF',         // Crisp clean card surface
-  surfaceSubtle: '#F4F0E8',   // Inner containers, pill tags, quiet backgrounds
-  surfaceHover: '#EBE5D9',    // Pressed states
-  border: '#E8E2D5',          // Subtle card and divider borders
-  borderSubtle: '#F2ECE1',
+  bg: string;              // Primary screen background
+  surface: string;         // Card & component surfaces
+  surfaceElevated: string; // Elevated cards, modals, popovers, navigation
+  surfaceSubtle: string;   // Secondary containers, quiet chips, inner wells
+  surfaceHover: string;    // Pressed & interactive active state
+  border: string;          // Primary borders & dividers
+  borderSubtle: string;    // Hairline dividers & soft outlines
 
-  // Typography (accessible contrast on warm cream and white)
-  textPrimary: '#201E26',     // Deep warm charcoal (>10:1 contrast)
-  textSecondary: '#666272',   // Muted soft slate (>4.5:1 contrast)
-  textTertiary: '#9692A2',    // Subtle timestamps and quiet captions
-  textInverse: '#FFFFFF',
+  // Typography
+  textPrimary: string;     // High-emphasis text (WCAG AAA >= 7:1)
+  textSecondary: string;   // Readable muted text (WCAG AA >= 4.5:1)
+  textTertiary: string;    // Quiet captions, timestamps
+  textInverse: string;     // Contrast text on inverted surfaces
 
-  // Primary Accent (Periwinkle / Cornflower Blue)
-  primary: '#4865F4',         // Main action color
-  primaryHover: '#3853E0',
-  primaryLight: '#EEF2FF',    // Light periwinkle tint
-  primarySubtle: '#5A75FA',
+  // Primary Action
+  primary: string;         // High-emphasis action background
+  primaryHover: string;    // Pressed state for primary action
+  primaryLight: string;    // Soft tint background for primary accent
+  primarySubtle: string;
 
-  // Soft Pastel Accents
-  lavender: '#E8E4F8',        // Accent card / tag
-  lavenderText: '#4D4080',
-  sage: '#D9EDE3',            // Calm positive / completed status
-  sageText: '#265C42',
-  peach: '#FCE5D8',           // Warm notice / limit highlight
-  peachText: '#874921',
-  sky: '#E1EDF9',             // Calm header / ambient tint
-  skyText: '#235077',
+  // Brand Accents
+  accentPrimary: string;       // Electric Mint #B9F6CA
+  accentPrimaryDark: string;   // Accessible companion on dark surfaces
+  accentPrimarySubtle: string; // Soft mint tint for pills & highlights
+  accentActivity: string;      // Signal Amber #FF9F43 (recorded activity)
+  accentActivityDark: string;  // Accessible companion on dark surfaces
+  accentActivitySubtle: string;// Soft amber tint for pills & notices
 
-  // Feedback / Utility
+  // Status Indicators
+  statusGreenDay: string;         // Mint indicator for zero-consumption days
+  statusGreenDayDark: string;     // Mint label for status
+  statusHabitActivity: string;    // Amber indicator for recorded habit days
+  statusHabitActivityDark: string;// Amber label for status
+  statusNeutralDot: string;       // Future / unrecorded calendar day dot
+
+  // Chart Tokens
+  chartTrack: string;
+  chartBar: string;
+  chartBarActive: string;
+  chartBarAlert: string;
+  chartLimitDot: string;
+
+  // Compatibility / Soft tags
+  lavender: string;
+  lavenderText: string;
+  sage: string;
+  sageText: string;
+  peach: string;
+  peachText: string;
+  sky: string;
+  skyText: string;
+
+  // Utility / Destructive (reserved strictly for errors & destructive acts)
+  danger: string;
+  dangerLight: string;
+  dangerText: string;
+}
+
+export const darkColors: ThemeColors = {
+  brand,
+
+  // Base Surfaces
+  bg: '#101412',              // Obsidian (Primary app canvas)
+  surface: '#222925',         // Graphite (Cards & elevated surfaces)
+  surfaceElevated: '#222925', // Graphite (Navigation dock, cards, modals)
+  surfaceSubtle: '#181E1B',   // Darker recessed wells, inner chips, input wells
+  surfaceHover: '#2A342F',    // Pressed & interactive active state
+  border: '#2E3933',          // Subtle visible border against graphite & obsidian
+  borderSubtle: '#222B26',    // Hairline divider
+
+  // Typography (Warm Ivory on Obsidian/Graphite, >13:1 contrast)
+  textPrimary: '#F4F2EA',     // Warm Ivory (Primary light text)
+  textSecondary: '#9EAAA3',   // Muted neutral (>5.5:1 contrast)
+  textTertiary: '#6B7771',    // Quiet captions, timestamps
+  textInverse: '#101412',     // Obsidian text on Electric Mint buttons
+
+  // Primary Action (Electric Mint button with Obsidian text in dark mode)
+  primary: '#B9F6CA',
+  primaryHover: '#A0E8B4',
+  primaryLight: '#183424',
+  primarySubtle: '#A0E8B4',
+
+  // Brand Accents
+  accentPrimary: '#B9F6CA',       // Electric Mint
+  accentPrimaryDark: '#B9F6CA',   // Mint is high-contrast on dark surfaces (>15:1)
+  accentPrimarySubtle: '#183424', // Subtle mint tint
+  accentActivity: '#FF9F43',      // Signal Amber
+  accentActivityDark: '#FF9F43',  // Amber is high-contrast on dark surfaces (>9:1)
+  accentActivitySubtle: '#3B2613',// Subtle amber tint
+
+  // Status Indicators
+  statusGreenDay: '#B9F6CA',      // Mint dot on calendar & badges
+  statusGreenDayDark: '#B9F6CA',
+  statusHabitActivity: '#FF9F43', // Amber dot for recorded activity
+  statusHabitActivityDark: '#FF9F43',
+  statusNeutralDot: '#343E38',    // Unrecorded / future calendar dot
+
+  // Chart Tokens
+  chartTrack: '#181E1B',
+  chartBar: '#1A3826',
+  chartBarActive: '#B9F6CA',
+  chartBarAlert: '#FF9F43',
+  chartLimitDot: '#FF9F43',
+
+  // Compatibility / Soft tags
+  lavender: '#181E1B',
+  lavenderText: '#9EAAA3',
+  sage: '#183424',
+  sageText: '#B9F6CA',
+  peach: '#3B2613',
+  peachText: '#FF9F43',
+  sky: '#181E1B',
+  skyText: '#9EAAA3',
+
+  // Utility / Destructive (reserved strictly for errors & destructive acts)
+  danger: '#E05353',
+  dangerLight: '#2E1818',
+  dangerText: '#FF8585',
+};
+
+// Light theme definition preserved for token reference
+export const lightColors: ThemeColors = {
+  brand,
+
+  bg: '#F4F2EA',
+  surface: '#FAF8F2',
+  surfaceElevated: '#FFFFFF',
+  surfaceSubtle: '#ECE7DC',
+  surfaceHover: '#E2DDD0',
+  border: '#DDD7CA',
+  borderSubtle: '#E8E3D7',
+
+  textPrimary: '#101412',
+  textSecondary: '#4A544F',
+  textTertiary: '#7A857F',
+  textInverse: '#F4F2EA',
+
+  primary: '#101412',
+  primaryHover: '#222925',
+  primaryLight: '#D6F7E1',
+  primarySubtle: '#222925',
+
+  accentPrimary: '#B9F6CA',
+  accentPrimaryDark: '#126137',
+  accentPrimarySubtle: '#D6F7E1',
+  accentActivity: '#FF9F43',
+  accentActivityDark: '#9C4B00',
+  accentActivitySubtle: '#FFEACC',
+
+  statusGreenDay: '#B9F6CA',
+  statusGreenDayDark: '#126137',
+  statusHabitActivity: '#FF9F43',
+  statusHabitActivityDark: '#9C4B00',
+  statusNeutralDot: '#D0C9BA',
+
+  chartTrack: '#ECE7DC',
+  chartBar: '#D6F7E1',
+  chartBarActive: '#126137',
+  chartBarAlert: '#FF9F43',
+  chartLimitDot: '#FF9F43',
+
+  lavender: '#ECE7DC',
+  lavenderText: '#4A544F',
+  sage: '#D6F7E1',
+  sageText: '#126137',
+  peach: '#FFEACC',
+  peachText: '#9C4B00',
+  sky: '#ECE7DC',
+  skyText: '#4A544F',
+
   danger: '#E05353',
   dangerLight: '#FDECEC',
   dangerText: '#8E2828',
 };
+
+// Dark mode is the app's default and only active theme
+export const colors: ThemeColors = darkColors;
+
+export function getThemeColors(): ThemeColors {
+  return darkColors;
+}
 
 export const spacing = {
   xs: 4,
@@ -113,17 +276,17 @@ export const typography = {
 
 export const shadows = {
   soft: {
-    shadowColor: '#2C2738',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
   floating: {
-    shadowColor: '#4865F4',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 6,
   },
 };

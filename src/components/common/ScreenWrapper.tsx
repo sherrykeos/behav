@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView, ViewStyle } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { colors, spacing } from '@/theme';
 
@@ -19,20 +19,36 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({
   style,
   edges = ['top'],
 }) => {
+  const insets = useSafeAreaInsets();
+  // Clearance for floating dock tab bar (dock height ~56dp + bottom inset + breathing space)
+  const bottomClearance = 56 + Math.max(insets.bottom, 8) + spacing.md;
+
   return (
     <SafeAreaView style={[styles.container, style]} edges={edges}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       {scrollable ? (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: bottomClearance },
+            contentContainerStyle,
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
           {children}
         </ScrollView>
       ) : (
-        <View style={[styles.staticContent, contentContainerStyle]}>{children}</View>
+        <View
+          style={[
+            styles.staticContent,
+            { paddingBottom: bottomClearance },
+            contentContainerStyle,
+          ]}
+        >
+          {children}
+        </View>
       )}
     </SafeAreaView>
   );

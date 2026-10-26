@@ -68,8 +68,10 @@ export const Button: React.FC<ButtonProps> = ({
     if (size === 'sm') list.push(styles.labelSm);
     else if (size === 'lg') list.push(styles.labelLg);
 
-    if (variant === 'primary' || variant === 'danger') {
+    if (variant === 'primary') {
       list.push(styles.labelInverse);
+    } else if (variant === 'danger') {
+      list.push(styles.labelDanger);
     } else if (variant === 'secondary') {
       list.push(styles.labelSecondary);
     } else if (variant === 'ghost') {
@@ -92,7 +94,7 @@ export const Button: React.FC<ButtonProps> = ({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === 'primary' || variant === 'danger' ? colors.textInverse : colors.primary}
+          color={variant === 'primary' ? colors.textInverse : variant === 'danger' ? colors.brand.ivory : colors.textPrimary}
         />
       ) : (
         <>
@@ -163,11 +165,14 @@ const styles = StyleSheet.create({
   labelInverse: {
     color: colors.textInverse,
   },
+  labelDanger: {
+    color: colors.brand.ivory,
+  },
   labelSecondary: {
     color: colors.textPrimary,
   },
   labelGhost: {
-    color: colors.primary,
+    color: colors.textPrimary,
   },
   labelDisabled: {
     color: colors.textTertiary,

@@ -5,7 +5,7 @@ import { colors, radii, shadows, spacing } from '@/theme';
 interface CardProps {
   children: React.ReactNode;
   style?: ViewStyle;
-  variant?: 'surface' | 'subtle' | 'accentLavender' | 'accentSage' | 'accentPeach';
+  variant?: 'surface' | 'subtle' | 'elevated' | 'mint' | 'amber' | 'accentLavender' | 'accentSage' | 'accentPeach';
 }
 
 export const Card: React.FC<CardProps> = ({
@@ -17,12 +17,16 @@ export const Card: React.FC<CardProps> = ({
     switch (variant) {
       case 'subtle':
         return colors.surfaceSubtle;
-      case 'accentLavender':
-        return colors.lavender;
+      case 'elevated':
+        return colors.surfaceElevated;
+      case 'mint':
       case 'accentSage':
-        return colors.sage;
+        return colors.accentPrimarySubtle;
+      case 'amber':
       case 'accentPeach':
-        return colors.peach;
+        return colors.accentActivitySubtle;
+      case 'accentLavender':
+        return colors.surfaceSubtle;
       case 'surface':
       default:
         return colors.surface;
@@ -34,7 +38,7 @@ export const Card: React.FC<CardProps> = ({
       style={[
         styles.card,
         { backgroundColor: getBackgroundColor() },
-        variant === 'surface' && shadows.soft,
+        (variant === 'surface' || variant === 'elevated') && shadows.soft,
         style,
       ]}
     >

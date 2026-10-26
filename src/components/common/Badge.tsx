@@ -4,7 +4,7 @@ import { colors, radii, spacing, typography } from '@/theme';
 
 interface BadgeProps {
   label: string;
-  variant?: 'lavender' | 'sage' | 'peach' | 'sky' | 'neutral' | 'primary';
+  variant?: 'lavender' | 'sage' | 'peach' | 'sky' | 'neutral' | 'primary' | 'mint' | 'amber';
   style?: ViewStyle;
 }
 
@@ -15,16 +15,17 @@ export const Badge: React.FC<BadgeProps> = ({
 }) => {
   const getBadgeStyle = () => {
     switch (variant) {
-      case 'lavender':
-        return { bg: colors.lavender, text: colors.lavenderText };
+      case 'mint':
       case 'sage':
-        return { bg: colors.sage, text: colors.sageText };
+        return { bg: colors.accentPrimarySubtle, text: colors.accentPrimaryDark };
+      case 'amber':
       case 'peach':
-        return { bg: colors.peach, text: colors.peachText };
-      case 'sky':
-        return { bg: colors.sky, text: colors.skyText };
+        return { bg: colors.accentActivitySubtle, text: colors.accentActivityDark };
       case 'primary':
-        return { bg: colors.primaryLight, text: colors.primary };
+        return { bg: colors.accentPrimarySubtle, text: colors.accentPrimaryDark };
+      case 'lavender':
+      case 'sky':
+        return { bg: colors.surfaceSubtle, text: colors.textSecondary };
       case 'neutral':
       default:
         return { bg: colors.surfaceSubtle, text: colors.textSecondary };
@@ -46,6 +47,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
     alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
   },
   text: {
     ...typography.labelSmall,
