@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Button } from '@/components/common/Button';
 import { colors, radii, spacing, typography } from '@/theme';
 import { type Behavior, type CreateBehaviorInput } from '@/types/database';
 import { useBehaviors } from '@/context/BehaviorContext';
@@ -28,9 +27,6 @@ interface BehaviorModalProps {
   onDelete?: (id: string) => Promise<void>;
 }
 
-const CATEGORY_SUGGESTIONS = ['Health', 'Focus', 'Habits', 'Wellness', 'Daily'];
-const UNIT_SUGGESTIONS = ['times', 'minutes', 'cups', 'pages', 'hours', 'ml'];
-
 export interface HabitLogoOption {
   id: string;
   name: string;
@@ -39,33 +35,43 @@ export interface HabitLogoOption {
 }
 
 export const HABIT_LOGO_OPTIONS: HabitLogoOption[] = [
-  // Profile logos
-  { id: 'leaf', name: 'Leaf', source: 'ionicons', icon: 'leaf' },
-  { id: 'flame', name: 'Flame', source: 'ionicons', icon: 'flame' },
-  { id: 'water', name: 'Water', source: 'material', icon: 'water' },
-  { id: 'fitness', name: 'Fitness', source: 'ionicons', icon: 'fitness' },
-  { id: 'sparkles', name: 'Sparkles', source: 'ionicons', icon: 'sparkles' },
-  { id: 'heart', name: 'Heart', source: 'ionicons', icon: 'heart' },
-  { id: 'star', name: 'Star', source: 'ionicons', icon: 'star' },
-  { id: 'compass', name: 'Compass', source: 'ionicons', icon: 'compass' },
-  { id: 'person', name: 'Person', source: 'ionicons', icon: 'person' },
-  { id: 'moon', name: 'Moon', source: 'ionicons', icon: 'moon' },
-  // Common habit logos
+  // Primary habit logos
   { id: 'smoking', name: 'Smoke', source: 'material', icon: 'smoking' },
   { id: 'cafe', name: 'Coffee', source: 'material', icon: 'coffee' },
   { id: 'wine', name: 'Wine', source: 'material', icon: 'glass-wine' },
   { id: 'beer', name: 'Beer', source: 'material', icon: 'beer' },
+  { id: 'leaf', name: 'Leaf', source: 'ionicons', icon: 'leaf' },
+  { id: 'flame', name: 'Flame', source: 'ionicons', icon: 'flame' },
+  { id: 'water', name: 'Water', source: 'material', icon: 'water' },
+  { id: 'fitness', name: 'Fitness', source: 'ionicons', icon: 'fitness' },
   { id: 'food-apple', name: 'Food', source: 'material', icon: 'food-apple' },
   { id: 'controller', name: 'Gaming', source: 'material', icon: 'controller' },
   { id: 'cellphone', name: 'Phone', source: 'material', icon: 'cellphone' },
   { id: 'barbell', name: 'Gym', source: 'material', icon: 'dumbbell' },
   { id: 'walk', name: 'Walk', source: 'material', icon: 'walk' },
-  { id: 'bicycle', name: 'Bike', source: 'material', icon: 'bicycle' },
   { id: 'book', name: 'Read', source: 'material', icon: 'book-open-variant' },
   { id: 'bed', name: 'Sleep', source: 'material', icon: 'bed' },
-  { id: 'trophy', name: 'Trophy', source: 'ionicons', icon: 'trophy' },
-  { id: 'repeat', name: 'Habit', source: 'material', icon: 'repeat' },
+  { id: 'heart', name: 'Heart', source: 'ionicons', icon: 'heart' },
+  { id: 'sparkles', name: 'Mindset', source: 'ionicons', icon: 'sparkles' },
+  { id: 'moon', name: 'Rest', source: 'ionicons', icon: 'moon' },
+  { id: 'repeat', name: 'General', source: 'material', icon: 'repeat' },
 ];
+
+export const PRESET_HABITS = [
+  { name: 'Smoking', icon: 'smoking', unit: 'cigarettes' },
+  { name: 'Coffee', icon: 'cafe', unit: 'cups' },
+  { name: 'Alcohol', icon: 'wine', unit: 'drinks' },
+  { name: 'Vaping', icon: 'smoking', unit: 'times' },
+  { name: 'NoFap', icon: 'repeat', unit: 'times' },
+  { name: 'Junk Food', icon: 'food-apple', unit: 'times' },
+  { name: 'Gaming', icon: 'controller', unit: 'hours' },
+  { name: 'Screen Time', icon: 'cellphone', unit: 'hours' },
+  { name: 'Workout', icon: 'barbell', unit: 'times' },
+  { name: 'Meditation', icon: 'leaf', unit: 'minutes' },
+];
+
+const COMMON_UNITS = ['times', 'cigarettes', 'cups', 'minutes', 'hours', 'drinks'];
+const COMMON_LIMITS = ['1', '2', '3', '5', '10'];
 
 export function renderHabitLogo(
   iconId?: string | null,
@@ -94,14 +100,19 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
 }) => {
   const { createBackupData, deleteBehavior } = useBehaviors();
 
+  // Core essential fields
   const [name, setName] = useState('');
-  const [nickname, setNickname] = useState('');
-  const [subtitle, setSubtitle] = useState('');
-  const [category, setCategory] = useState('');
+  const [selectedIcon, setSelectedIcon] = useState<string>('repeat');
   const [unit, setUnit] = useState('times');
   const [dailyLimit, setDailyLimit] = useState('');
+
+  // Optional collapsible fields
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [subtitle, setSubtitle] = useState('');
+  const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState<string>('repeat');
+
+  // UI state
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -113,23 +124,30 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
   useEffect(() => {
     if (visible) {
       if (behaviorToEdit) {
-        setName(behaviorToEdit.name);
-        setNickname(behaviorToEdit.nickname || '');
-        setSubtitle(behaviorToEdit.subtitle || '');
-        setCategory(behaviorToEdit.category || '');
+        setName(behaviorToEdit.nickname || behaviorToEdit.name);
+        setSelectedIcon(behaviorToEdit.icon || 'repeat');
         setUnit(behaviorToEdit.unit || 'times');
         setDailyLimit(behaviorToEdit.dailyLimit ? String(behaviorToEdit.dailyLimit) : '');
+        setSubtitle(behaviorToEdit.subtitle || '');
+        setCategory(behaviorToEdit.category || '');
         setDescription(behaviorToEdit.description || '');
-        setSelectedIcon(behaviorToEdit.icon || 'repeat');
+
+        // Auto-expand advanced options if the existing habit has them filled
+        const hasExtraData = !!(
+          behaviorToEdit.subtitle ||
+          behaviorToEdit.category ||
+          behaviorToEdit.description
+        );
+        setShowAdvanced(hasExtraData);
       } else {
         setName('');
-        setNickname('');
-        setSubtitle('');
-        setCategory('');
+        setSelectedIcon('repeat');
         setUnit('times');
         setDailyLimit('');
+        setSubtitle('');
+        setCategory('');
         setDescription('');
-        setSelectedIcon('repeat');
+        setShowAdvanced(false);
       }
       setError(null);
       setShowDeleteWarning(false);
@@ -138,11 +156,17 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
     }
   }, [behaviorToEdit, visible]);
 
+  const handleSelectPreset = (preset: (typeof PRESET_HABITS)[0]) => {
+    setName(preset.name);
+    setSelectedIcon(preset.icon);
+    setUnit(preset.unit);
+    setError(null);
+  };
+
   const handleSubmit = async () => {
     const trimmedName = name.trim();
-    const trimmedNickname = nickname.trim();
-    if (!trimmedName && !trimmedNickname) {
-      setError('Habit name or nickname is required.');
+    if (!trimmedName) {
+      setError('Please enter a habit name.');
       return;
     }
 
@@ -160,8 +184,8 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
       setIsSubmitting(true);
       setError(null);
       await onSave({
-        name: trimmedName || trimmedNickname,
-        nickname: trimmedNickname || null,
+        name: trimmedName,
+        nickname: trimmedName,
         subtitle: subtitle.trim() || null,
         category: category.trim() || null,
         unit: unit.trim() || 'times',
@@ -171,7 +195,7 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      setError(err?.message || 'Failed to save behavior.');
+      setError(err?.message || 'Failed to save habit.');
     } finally {
       setIsSubmitting(false);
     }
@@ -238,258 +262,309 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}
       >
+        <Pressable style={styles.backdrop} onPress={onClose} />
+
         <View style={styles.sheetContainer}>
           {/* Header */}
           <View style={styles.header}>
-            <View>
+            <View style={styles.headerTitleCol}>
               <Text style={styles.title}>
-                {behaviorToEdit ? 'Modify Habit' : 'New Habit'}
+                {behaviorToEdit ? 'Edit Habit' : 'New Habit'}
               </Text>
               <Text style={styles.subtitle}>
-                Configure nickname, target quantity & home tab logo
+                {behaviorToEdit ? 'Update your habit settings' : 'What habit would you like to track?'}
               </Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close modal">
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
-            </Pressable>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.closeBtn}
+              accessibilityLabel="Close modal"
+            >
+              <Ionicons name="close" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.scrollContent}
+          >
             {error && (
               <View style={styles.errorBox}>
-                <Ionicons name="alert-circle" size={18} color={colors.danger} />
+                <Ionicons name="alert-circle" size={17} color={colors.danger} />
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
 
-            {/* Habit Logo Selector */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Habit Logo (Used in Home Tab)</Text>
-              <View style={styles.logoPreviewRow}>
-                <View style={styles.selectedLogoCircle}>
-                  {renderHabitLogo(selectedIcon, 28, colors.accentPrimary)}
+            {/* Quick Suggestion Pills (Only shown when creating new habit) */}
+            {!behaviorToEdit && (
+              <View style={styles.presetsSection}>
+                <Text style={styles.sectionCaption}>Quick suggestions</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.presetsScroll}
+                >
+                  {PRESET_HABITS.map((p) => {
+                    const isSelected = name.toLowerCase() === p.name.toLowerCase();
+                    return (
+                      <TouchableOpacity
+                        key={p.name}
+                        style={[styles.presetChip, isSelected && styles.presetChipActive]}
+                        onPress={() => handleSelectPreset(p)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.presetIconWrap}>
+                          {renderHabitLogo(p.icon, 14, isSelected ? colors.textInverse : colors.accentPrimary)}
+                        </View>
+                        <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>
+                          {p.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Habit Identity Card: Icon + Name */}
+            <View style={styles.card}>
+              <View style={styles.identityRow}>
+                {/* Selected Icon Avatar Button */}
+                <View style={styles.iconAvatar}>
+                  {renderHabitLogo(selectedIcon, 26, colors.accentPrimary)}
                 </View>
-                <View style={styles.selectedLogoTextCol}>
-                  <Text style={styles.selectedLogoTitle}>
-                    {HABIT_LOGO_OPTIONS.find((o) => o.id === selectedIcon)?.name || 'Custom Logo'}
-                  </Text>
-                  <Text style={styles.selectedLogoDesc}>
-                    This logo will identify this habit in the Home and Profile tabs
-                  </Text>
+
+                {/* Name Input */}
+                <View style={styles.nameInputContainer}>
+                  <Text style={styles.fieldLabel}>Habit Name *</Text>
+                  <TextInput
+                    style={styles.mainInput}
+                    placeholder="e.g. Smoking, Coffee, Reading"
+                    placeholderTextColor={colors.textTertiary}
+                    value={name}
+                    onChangeText={(val) => {
+                      setName(val);
+                      if (error) setError(null);
+                    }}
+                    maxLength={60}
+                    autoCapitalize="words"
+                  />
                 </View>
               </View>
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.logoOptionsScroll}
-              >
-                {HABIT_LOGO_OPTIONS.map((opt) => {
-                  const isSelected = selectedIcon === opt.id;
-                  return (
-                    <TouchableOpacity
-                      key={opt.id}
-                      style={[
-                        styles.logoOptionCard,
-                        isSelected && styles.logoOptionCardActive,
-                      ]}
-                      onPress={() => setSelectedIcon(opt.id)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.logoOptionIconBox}>
+              {/* Icon Picker Carousel */}
+              <View style={styles.iconSelectorRow}>
+                <Text style={styles.iconPickerLabel}>Select Icon</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.iconPickerScroll}
+                >
+                  {HABIT_LOGO_OPTIONS.map((opt) => {
+                    const isSelected = selectedIcon === opt.id;
+                    return (
+                      <TouchableOpacity
+                        key={opt.id}
+                        style={[styles.iconChoice, isSelected && styles.iconChoiceActive]}
+                        onPress={() => setSelectedIcon(opt.id)}
+                        activeOpacity={0.7}
+                      >
                         {renderHabitLogo(
                           opt.id,
-                          20,
+                          18,
                           isSelected ? colors.accentPrimary : colors.textSecondary
                         )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.logoOptionLabel,
-                          isSelected && styles.logoOptionLabelActive,
-                        ]}
-                        numberOfLines={1}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+
+            {/* Tracking Config Card: Unit & Limit */}
+            <View style={styles.card}>
+              {/* Unit Selection */}
+              <View style={styles.formGroup}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.fieldLabel}>Logged Unit</Text>
+                  <TextInput
+                    style={styles.unitInlineInput}
+                    value={unit}
+                    onChangeText={setUnit}
+                    placeholder="custom..."
+                    placeholderTextColor={colors.textTertiary}
+                    maxLength={20}
+                  />
+                </View>
+                <View style={styles.chipsRow}>
+                  {COMMON_UNITS.map((u) => {
+                    const isSelected = unit.toLowerCase() === u.toLowerCase();
+                    return (
+                      <Pressable
+                        key={u}
+                        onPress={() => setUnit(u)}
+                        style={[styles.chip, isSelected && styles.chipActive]}
                       >
-                        {opt.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
+                        <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                          {u}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
 
-            {/* Habit Name */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Habit Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Smoking, Coffee, Meditation, Reading"
-                placeholderTextColor={colors.textTertiary}
-                value={name}
-                onChangeText={(val) => {
-                  setName(val);
-                  if (error) setError(null);
-                }}
-                maxLength={60}
-              />
-            </View>
+              <View style={styles.divider} />
 
-            {/* Nickname / Display Label */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Nickname / Display Label (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Morning Vape, Espresso Shot, 20m Walk"
-                placeholderTextColor={colors.textTertiary}
-                value={nickname}
-                onChangeText={setNickname}
-                maxLength={60}
-              />
-              <Text style={styles.helperText}>
-                Custom nickname will be prioritized on your Home tab habit card.
-              </Text>
-            </View>
+              {/* Daily Limit / Target (Optional) */}
+              <View style={styles.formGroupNoMargin}>
+                <View style={styles.rowBetween}>
+                  <View>
+                    <Text style={styles.fieldLabel}>Daily Target / Limit</Text>
+                    <Text style={styles.fieldCaption}>Threshold for daily status</Text>
+                  </View>
+                  <TextInput
+                    style={styles.limitInput}
+                    placeholder="None"
+                    placeholderTextColor={colors.textTertiary}
+                    value={dailyLimit}
+                    onChangeText={(val) => {
+                      setDailyLimit(val);
+                      if (error) setError(null);
+                    }}
+                    keyboardType="numeric"
+                    maxLength={6}
+                  />
+                </View>
 
-            {/* Subtitle */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Subtitle (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Keep it down, Drink 2L daily, Focus mindset"
-                placeholderTextColor={colors.textTertiary}
-                value={subtitle}
-                onChangeText={setSubtitle}
-                maxLength={80}
-              />
-              <Text style={styles.helperText}>
-                Displayed directly below your nickname on the Home tab card.
-              </Text>
-            </View>
-
-            {/* Daily Target / Limit Quantity */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Daily Target / Limit Quantity (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 5, 20, 2"
-                placeholderTextColor={colors.textTertiary}
-                value={dailyLimit}
-                onChangeText={(val) => {
-                  setDailyLimit(val);
-                  if (error) setError(null);
-                }}
-                keyboardType="numeric"
-              />
-              <Text style={styles.helperText}>
-                Threshold for daily status and progress tracking.
-              </Text>
-            </View>
-
-            {/* Measurement Unit */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Measurement Unit</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="times, minutes, cups, pages, ml"
-                placeholderTextColor={colors.textTertiary}
-                value={unit}
-                onChangeText={setUnit}
-                maxLength={30}
-              />
-              <View style={styles.chipsRow}>
-                {UNIT_SUGGESTIONS.map((u) => (
-                  <Pressable
-                    key={u}
-                    onPress={() => setUnit(u)}
-                    style={[
-                      styles.chip,
-                      unit.toLowerCase() === u.toLowerCase() && styles.chipActive,
-                    ]}
+                {/* Quick limit suggestion buttons */}
+                <View style={styles.limitChipsRow}>
+                  <TouchableOpacity
+                    style={[styles.limitChip, !dailyLimit && styles.limitChipActive]}
+                    onPress={() => setDailyLimit('')}
                   >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        unit.toLowerCase() === u.toLowerCase() && styles.chipTextActive,
-                      ]}
-                    >
-                      {u}
+                    <Text style={[styles.limitChipText, !dailyLimit && styles.limitChipTextActive]}>
+                      No Limit
                     </Text>
-                  </Pressable>
-                ))}
+                  </TouchableOpacity>
+                  {COMMON_LIMITS.map((lim) => {
+                    const isSelected = dailyLimit === lim;
+                    return (
+                      <TouchableOpacity
+                        key={lim}
+                        style={[styles.limitChip, isSelected && styles.limitChipActive]}
+                        onPress={() => setDailyLimit(lim)}
+                      >
+                        <Text style={[styles.limitChipText, isSelected && styles.limitChipTextActive]}>
+                          {lim}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
             </View>
 
-            {/* Category */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Category (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Health, Focus, Routine"
-                placeholderTextColor={colors.textTertiary}
-                value={category}
-                onChangeText={setCategory}
-                maxLength={40}
+            {/* Collapsible More Options Accordion */}
+            <TouchableOpacity
+              style={styles.accordionHeader}
+              onPress={() => setShowAdvanced((prev) => !prev)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.accordionTitle}>
+                {showAdvanced ? 'Hide Additional Options' : 'More Options (Subtitle, Notes)'}
+              </Text>
+              <Ionicons
+                name={showAdvanced ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.textSecondary}
               />
-              <View style={styles.chipsRow}>
-                {CATEGORY_SUGGESTIONS.map((cat) => (
-                  <Pressable
-                    key={cat}
-                    onPress={() => setCategory(cat)}
-                    style={[
-                      styles.chip,
-                      category.toLowerCase() === cat.toLowerCase() && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        category.toLowerCase() === cat.toLowerCase() && styles.chipTextActive,
-                      ]}
-                    >
-                      {cat}
-                    </Text>
-                  </Pressable>
-                ))}
+            </TouchableOpacity>
+
+            {showAdvanced && (
+              <View style={[styles.card, styles.advancedCard]}>
+                {/* Subtitle */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.fieldLabel}>Subtitle</Text>
+                  <TextInput
+                    style={styles.subInput}
+                    placeholder="e.g. Keep it down, 2L daily goal"
+                    placeholderTextColor={colors.textTertiary}
+                    value={subtitle}
+                    onChangeText={setSubtitle}
+                    maxLength={80}
+                  />
+                </View>
+
+                {/* Category */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.fieldLabel}>Category</Text>
+                  <TextInput
+                    style={styles.subInput}
+                    placeholder="e.g. Health, Focus, Routine"
+                    placeholderTextColor={colors.textTertiary}
+                    value={category}
+                    onChangeText={setCategory}
+                    maxLength={40}
+                  />
+                </View>
+
+                {/* Notes */}
+                <View style={styles.formGroupNoMargin}>
+                  <Text style={styles.fieldLabel}>Notes & Cues</Text>
+                  <TextInput
+                    style={[styles.subInput, styles.textArea]}
+                    placeholder="Add personal reminders or motivation..."
+                    placeholderTextColor={colors.textTertiary}
+                    value={description}
+                    onChangeText={setDescription}
+                    multiline
+                    numberOfLines={2}
+                    maxLength={150}
+                  />
+                </View>
               </View>
-            </View>
+            )}
 
-            {/* Description / Intention */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Notes / Intention (Optional)</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Add notes, cues, or intention..."
-                placeholderTextColor={colors.textTertiary}
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={3}
-                maxLength={200}
-              />
-            </View>
-
-            {/* Save / Cancel Action Buttons */}
+            {/* Action Buttons */}
             <View style={styles.actionsRow}>
-              <Button
-                label="Cancel"
+              <TouchableOpacity
+                style={styles.cancelBtn}
                 onPress={onClose}
-                variant="secondary"
-                size="md"
-                style={{ flex: 1 }}
-              />
-              <Button
-                label={behaviorToEdit ? 'Save Changes' : 'Create Habit'}
+                disabled={isSubmitting}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.saveBtn, isSubmitting && styles.btnDisabled]}
                 onPress={handleSubmit}
-                variant="primary"
-                size="md"
-                loading={isSubmitting}
-                style={{ flex: 1 }}
-              />
+                disabled={isSubmitting}
+                activeOpacity={0.8}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color={colors.textInverse} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={behaviorToEdit ? 'checkmark' : 'add'}
+                      size={18}
+                      color={colors.textInverse}
+                    />
+                    <Text style={styles.saveBtnText}>
+                      {behaviorToEdit ? 'Save Changes' : 'Create Habit'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
 
             {/* Delete Habit Trigger Button (Only in edit mode) */}
@@ -501,14 +576,14 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
                   activeOpacity={0.7}
                   disabled={isSubmitting || isDeleting || isBackingUp}
                 >
-                  <Ionicons name="trash-outline" size={17} color={colors.danger} />
+                  <Ionicons name="trash-outline" size={15} color={colors.danger} />
                   <Text style={styles.deleteTriggerText}>Delete Habit</Text>
                 </TouchableOpacity>
               </View>
             )}
           </ScrollView>
 
-          {/* Delete Confirmation & Backup Warning Dialog */}
+          {/* Delete Confirmation & Safe Backup Dialog */}
           <Modal
             visible={showDeleteWarning}
             transparent
@@ -519,9 +594,8 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
           >
             <View style={styles.warningOverlay}>
               <View style={styles.warningCard}>
-                {/* Warning Icon Badge */}
                 <View style={styles.warningBadge}>
-                  <Ionicons name="alert-circle" size={32} color={colors.danger} />
+                  <Ionicons name="alert-circle" size={28} color={colors.danger} />
                 </View>
 
                 <Text style={styles.warningTitle}>
@@ -529,22 +603,17 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
                 </Text>
 
                 <Text style={styles.warningDesc}>
-                  This action will permanently delete this habit and all its logged activity records
-                  from your device. This cannot be undone.
+                  Permanently deletes this habit and its historical logs from your device.
                 </Text>
 
-                {/* Backup Recommendation Box */}
                 <View style={styles.backupCallout}>
-                  <Ionicons name="shield-checkmark" size={18} color={colors.accentPrimary} />
+                  <Ionicons name="shield-checkmark" size={16} color={colors.accentPrimary} />
                   <Text style={styles.backupCalloutText}>
-                    You can save a full JSON backup right now before deleting to keep your historical
-                    records safe.
+                    Export a backup file now to keep your records safe before deleting.
                   </Text>
                 </View>
 
-                {/* Action Buttons */}
                 <View style={styles.warningActions}>
-                  {/* Backup & Delete */}
                   <TouchableOpacity
                     style={[styles.backupDeleteBtn, (isBackingUp || isDeleting) && styles.btnDisabled]}
                     onPress={handleBackupAndDelete}
@@ -555,13 +624,12 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
                       <ActivityIndicator size="small" color="#101412" />
                     ) : (
                       <>
-                        <Ionicons name="cloud-upload" size={18} color="#101412" />
+                        <Ionicons name="cloud-upload" size={16} color="#101412" />
                         <Text style={styles.backupDeleteBtnText}>Backup & Delete</Text>
                       </>
                     )}
                   </TouchableOpacity>
 
-                  {/* Delete without backup */}
                   <TouchableOpacity
                     style={[styles.directDeleteBtn, (isBackingUp || isDeleting) && styles.btnDisabled]}
                     onPress={handleDirectDelete}
@@ -572,13 +640,12 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
                       <ActivityIndicator size="small" color={colors.dangerText} />
                     ) : (
                       <>
-                        <Ionicons name="trash-outline" size={16} color={colors.dangerText} />
+                        <Ionicons name="trash-outline" size={15} color={colors.dangerText} />
                         <Text style={styles.directDeleteBtnText}>Delete Without Backup</Text>
                       </>
                     )}
                   </TouchableOpacity>
 
-                  {/* Cancel */}
                   <TouchableOpacity
                     style={styles.warningCancelBtn}
                     onPress={() => setShowDeleteWarning(false)}
@@ -600,17 +667,28 @@ export const BehaviorModal: React.FC<BehaviorModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.md,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFill,
   },
   sheetContainer: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xxl,
+    width: '100%',
+    maxWidth: 440,
     maxHeight: '90%',
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
   },
   header: {
     flexDirection: 'row',
@@ -618,182 +696,361 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: spacing.md,
   },
+  headerTitleCol: {
+    flex: 1,
+  },
   title: {
-    ...typography.titleMedium,
+    fontSize: 20,
+    fontWeight: '800',
     color: colors.textPrimary,
+    letterSpacing: -0.4,
   },
   subtitle: {
-    ...typography.bodySmall,
+    fontSize: 12.5,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
+  scrollContent: {
+    paddingBottom: spacing.sm,
   },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.dangerLight,
+    gap: 8,
+    backgroundColor: 'rgba(255, 82, 82, 0.12)',
+    borderColor: 'rgba(255, 82, 82, 0.3)',
+    borderWidth: 1,
     padding: spacing.sm,
-    borderRadius: radii.sm,
+    borderRadius: 12,
     marginBottom: spacing.md,
   },
   errorText: {
-    ...typography.bodySmall,
-    color: colors.dangerText,
+    color: colors.danger,
+    fontSize: 12.5,
+    fontWeight: '500',
     flex: 1,
   },
-  formGroup: {
+  // Presets Section
+  presetsSection: {
     marginBottom: spacing.md,
   },
-  label: {
-    ...typography.labelSmall,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
+  sectionCaption: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 6,
   },
-  logoPreviewRow: {
+  presetsScroll: {
+    gap: 8,
+    paddingBottom: 2,
+  },
+  presetChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
-  selectedLogoCircle: {
+  presetChipActive: {
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
+  },
+  presetIconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  presetChipTextActive: {
+    color: colors.textInverse,
+    fontWeight: '700',
+  },
+  // Card Containers
+  card: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: 18,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    marginBottom: spacing.md,
+  },
+  identityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: spacing.sm,
+  },
+  iconAvatar: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: `${colors.accentPrimary}1A`,
-    borderWidth: 1.5,
-    borderColor: colors.accentPrimary,
+    borderRadius: 16,
+    backgroundColor: 'rgba(185, 246, 202, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(185, 246, 202, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  selectedLogoTextCol: {
+  nameInputContainer: {
     flex: 1,
   },
-  selectedLogoTitle: {
-    ...typography.labelLarge,
-    color: colors.textPrimary,
-  },
-  selectedLogoDesc: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    fontSize: 11,
-    marginTop: 1,
-  },
-  logoOptionsScroll: {
-    gap: 8,
-    paddingVertical: 4,
-  },
-  logoOptionCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: radii.md,
-    backgroundColor: colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    minWidth: 62,
-  },
-  logoOptionCardActive: {
-    borderColor: colors.accentPrimary,
-    backgroundColor: `${colors.accentPrimary}15`,
-  },
-  logoOptionIconBox: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoOptionLabel: {
-    ...typography.labelSmall,
-    color: colors.textTertiary,
-    fontSize: 10,
-    marginTop: 2,
-  },
-  logoOptionLabelActive: {
-    color: colors.accentPrimary,
+  fieldLabel: {
+    fontSize: 12,
     fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 4,
   },
-  input: {
+  fieldCaption: {
+    fontSize: 11,
+    color: colors.textTertiary,
+  },
+  mainInput: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  // Icon Picker
+  iconSelectorRow: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  iconPickerLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  iconPickerScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  iconChoice: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: colors.surfaceSubtle,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    ...typography.bodyMedium,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconChoiceActive: {
+    backgroundColor: 'rgba(185, 246, 202, 0.15)',
+    borderColor: colors.accentPrimary,
+  },
+  // Form groups & Units
+  formGroup: {
+    marginBottom: spacing.sm,
+  },
+  formGroupNoMargin: {
+    marginBottom: 0,
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  unitInlineInput: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 12,
+    fontWeight: '600',
     color: colors.textPrimary,
-  },
-  textArea: {
-    minHeight: 70,
-    textAlignVertical: 'top',
-  },
-  helperText: {
-    ...typography.bodySmall,
-    color: colors.textTertiary,
-    fontSize: 11,
-    marginTop: 4,
+    minWidth: 70,
+    textAlign: 'right',
   },
   chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+    gap: 6,
   },
   chip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
     backgroundColor: colors.surfaceSubtle,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
   chipActive: {
-    backgroundColor: colors.accentPrimarySubtle,
-    borderColor: colors.accentPrimary,
+    backgroundColor: 'rgba(185, 246, 202, 0.14)',
+    borderColor: 'rgba(185, 246, 202, 0.4)',
   },
   chipText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
     fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   chipTextActive: {
     color: colors.accentPrimary,
+    fontWeight: '700',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+    marginVertical: spacing.sm,
+  },
+  limitInput: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    minWidth: 60,
+    textAlign: 'center',
+  },
+  limitChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  limitChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  limitChipActive: {
+    backgroundColor: 'rgba(185, 246, 202, 0.12)',
+    borderColor: 'rgba(185, 246, 202, 0.35)',
+  },
+  limitChipText: {
+    fontSize: 11.5,
+    color: colors.textTertiary,
     fontWeight: '600',
   },
+  limitChipTextActive: {
+    color: colors.accentPrimary,
+    fontWeight: '700',
+  },
+  // Accordion
+  accordionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: spacing.xs,
+  },
+  accordionTitle: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  advancedCard: {
+    marginTop: 4,
+  },
+  subInput: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
+  textArea: {
+    minHeight: 52,
+    textAlignVertical: 'top',
+  },
+  // Actions
   actionsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    marginBottom: spacing.md,
+    alignItems: 'center',
+    gap: 10,
+    marginTop: spacing.sm,
   },
+  cancelBtn: {
+    flex: 0.35,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  cancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  saveBtn: {
+    flex: 0.65,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: colors.accentPrimary,
+  },
+  saveBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textInverse,
+  },
+  btnDisabled: {
+    opacity: 0.6,
+  },
+  // Delete Section
   deleteSection: {
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
+    marginTop: spacing.md,
     alignItems: 'center',
   },
   deleteTriggerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
   },
   deleteTriggerText: {
-    ...typography.labelMedium,
-    color: colors.danger,
     fontSize: 13,
+    fontWeight: '600',
+    color: colors.danger,
   },
-  // Warning Dialog styles
+  // Warning Dialog
   warningOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
@@ -805,31 +1062,30 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 380,
     backgroundColor: colors.surface,
-    borderRadius: radii.xl,
+    borderRadius: 22,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg,
     alignItems: 'center',
   },
   warningBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.dangerLight,
-    borderWidth: 1.5,
-    borderColor: colors.danger,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255, 82, 82, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
   warningTitle: {
-    ...typography.titleMedium,
+    fontSize: 18,
+    fontWeight: '800',
     color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: spacing.xs,
   },
   warningDesc: {
-    ...typography.bodySmall,
+    fontSize: 13,
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
@@ -837,66 +1093,62 @@ const styles = StyleSheet.create({
   },
   backupCallout: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: colors.accentPrimarySubtle,
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(185, 246, 202, 0.1)',
+    borderRadius: 12,
+    padding: spacing.sm,
     borderWidth: 1,
-    borderColor: `${colors.accentPrimary}40`,
-    borderRadius: radii.md,
-    padding: spacing.md,
+    borderColor: 'rgba(185, 246, 202, 0.25)',
     marginBottom: spacing.lg,
   },
   backupCalloutText: {
-    ...typography.bodySmall,
-    color: colors.sageText,
     flex: 1,
     fontSize: 12,
+    color: colors.textPrimary,
     lineHeight: 16,
   },
   warningActions: {
     width: '100%',
-    gap: spacing.sm,
+    gap: 10,
   },
   backupDeleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: colors.accentPrimary,
     paddingVertical: 12,
-    borderRadius: radii.md,
+    borderRadius: 14,
   },
   backupDeleteBtnText: {
-    ...typography.labelLarge,
-    color: '#101412',
+    fontSize: 14,
     fontWeight: '700',
+    color: '#101412',
   },
   directDeleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: colors.dangerLight,
+    backgroundColor: 'rgba(255, 82, 82, 0.12)',
+    paddingVertical: 11,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.danger,
-    paddingVertical: 10,
-    borderRadius: radii.md,
+    borderColor: 'rgba(255, 82, 82, 0.3)',
   },
   directDeleteBtnText: {
-    ...typography.labelMedium,
+    fontSize: 13.5,
+    fontWeight: '600',
     color: colors.dangerText,
-    fontSize: 13,
   },
   warningCancelBtn: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
   warningCancelText: {
-    ...typography.bodyMedium,
-    color: colors.textTertiary,
-  },
-  btnDisabled: {
-    opacity: 0.5,
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 });
