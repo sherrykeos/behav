@@ -63,12 +63,13 @@ interface BehaviorContextValue {
       date: string;
       dayNumber: number;
       dayOfWeek: number;
-      status: 'green' | 'logged' | 'future';
+      status: 'green' | 'logged' | 'future' | 'unknown';
       isToday: boolean;
     }[];
     monthName: string;
     monthOffset: number;
   }>;
+  setDailyQuantity: (behaviorId: string, value: number, dateInput?: string | Date, note?: string | null) => Promise<LogEntry>;
   getMultiHabitWeekData: (anchorDate?: string) => Promise<import('@/db').MultiHabitWeekData>;
   getUnifiedStats: (anchorDate?: string) => Promise<import('@/db').UnifiedStatsData>;
   // Record bounds & inspection
@@ -76,12 +77,14 @@ interface BehaviorContextValue {
   // Backup & Restore operations
   createBackupData: (options?: { startDate?: string; endDate?: string }) => Promise<import('@/db').BehavBackupFile>;
   validateBackupContent: (jsonString: string, filename?: string) => { isValid: boolean; error?: string; backup?: import('@/db').BehavBackupFile };
+  checkDateCollision: (backup: import('@/db').BehavBackupFile) => Promise<import('@/db').DateCollisionCheckResult>;
   restoreBackupData: (backup: import('@/db').BehavBackupFile, mode?: 'merge' | 'replace') => Promise<import('@/db').RestoreResult>;
   exportLogsCsv: (options?: { startDate?: string; endDate?: string }) => Promise<string>;
   exportBehaviorsCsv: () => Promise<string>;
   // Utilities
   getEntriesForDate: (date: string | Date) => Promise<LogEntryWithBehavior[]>;
   getSummariesForDate: (date: string | Date) => Promise<DailyBehaviorSummary[]>;
+  deleteEntriesForDate: (date: string | Date, behaviorId?: string) => Promise<void>;
 }
 
 const BehaviorContext = createContext<BehaviorContextValue | null>(null);
@@ -261,6 +264,20 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     await refreshData();
   }, [repos, refreshData]);
 
+  const setDailyQuantity = useCallback(
+    async (
+      behaviorId: string,
+      value: number,
+      dateInput?: string | Date,
+      note?: string | null
+    ): Promise<LogEntry> => {
+      const entry = await repos.logEntries.setDailyQuantity(behaviorId, value, dateInput, note);
+      await refreshData();
+      return entry;
+    },
+    [repos, refreshData]
+  );
+
   // Goals CRUD
   const createGoal = useCallback(async (input: CreateGoalInput): Promise<Goal> => {
     const goal = await repos.goals.create(input);
@@ -312,6 +329,10 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return repos.backup.validateBackup(jsonString, filename);
   }, [repos]);
 
+  const checkDateCollision = useCallback(async (backup: import('@/db').BehavBackupFile) => {
+    return repos.backup.checkDateCollision(backup);
+  }, [repos]);
+
   const restoreBackupData = useCallback(async (backup: import('@/db').BehavBackupFile, mode: 'merge' | 'replace' = 'replace') => {
     const result = await repos.backup.restoreBackup(backup, mode);
     await refreshData();
@@ -334,6 +355,14 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return repos.logEntries.getDailySummaries(date);
   }, [repos]);
 
+  const deleteEntriesForDate = useCallback(
+    async (date: string | Date, behaviorId?: string): Promise<void> => {
+      await repos.logEntries.deleteByDate(date, behaviorId);
+      await refreshData();
+    },
+    [repos, refreshData]
+  );
+
   const value = useMemo<BehaviorContextValue>(
     () => ({
       behaviors,
@@ -354,6 +383,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       createLogEntry,
       updateLogEntry,
       deleteLogEntry,
+      setDailyQuantity,
       createGoal,
       updateGoal,
       deleteGoal,
@@ -365,11 +395,13 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       getRecordBounds,
       createBackupData,
       validateBackupContent,
+      checkDateCollision,
       restoreBackupData,
       exportLogsCsv,
       exportBehaviorsCsv,
       getEntriesForDate,
       getSummariesForDate,
+      deleteEntriesForDate,
     }),
     [
       behaviors,
@@ -390,6 +422,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       createLogEntry,
       updateLogEntry,
       deleteLogEntry,
+      setDailyQuantity,
       createGoal,
       updateGoal,
       deleteGoal,
@@ -401,6 +434,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       getRecordBounds,
       createBackupData,
       validateBackupContent,
+      checkDateCollision,
       restoreBackupData,
       exportLogsCsv,
       exportBehaviorsCsv,
