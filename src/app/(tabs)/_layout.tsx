@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { StyleSheet, View, TouchableOpacity, Platform } from 'react-native';
+import { StyleSheet, View, Pressable, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme';
@@ -59,21 +59,34 @@ function FloatingDockTabBar({ state, descriptors, navigateToTab }: CustomTabBarP
           };
 
           return (
-            <TouchableOpacity
+            <Pressable
               key={route.key}
               accessibilityRole="button"
               accessibilityState={isFocused ? { selected: true } : {}}
               accessibilityLabel={accessibilityLabel}
               onPress={onPress}
-              style={[styles.tabButton, isFocused && styles.tabButtonActive]}
-              activeOpacity={0.7}
+              style={({ pressed, hovered }: { pressed?: boolean; hovered?: boolean }) => [
+                styles.tabButton,
+                isFocused && styles.tabButtonActive,
+                hovered && !isFocused && styles.tabButtonHover,
+                hovered && isFocused && styles.tabButtonActiveHover,
+                pressed && styles.tabButtonPressed,
+              ]}
             >
-              <Ionicons
-                name={iconName}
-                size={18}
-                color={isFocused ? colors.accentPrimary : colors.textSecondary}
-              />
-            </TouchableOpacity>
+              {({ hovered }: { hovered?: boolean }) => (
+                <Ionicons
+                  name={iconName}
+                  size={19}
+                  color={
+                    isFocused
+                      ? colors.accentPrimary
+                      : hovered
+                      ? colors.textPrimary
+                      : colors.textSecondary
+                  }
+                />
+              )}
+            </Pressable>
           );
         })}
       </View>
@@ -163,15 +176,33 @@ const styles = StyleSheet.create({
     borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+        transition: 'all 0.18s ease-in-out',
+      } as any,
+    }),
+  },
+  tabButtonHover: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   tabButtonActive: {
-    backgroundColor: 'rgba(185, 246, 202, 0.14)',
+    backgroundColor: colors.surfaceHover,
     borderWidth: 1,
-    borderColor: 'rgba(185, 246, 202, 0.35)',
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     elevation: 2,
-    shadowColor: colors.accentPrimary,
-    shadowOpacity: 0.15,
+    shadowColor: '#000000',
+    shadowOpacity: 0.25,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 1 },
+  },
+  tabButtonActiveHover: {
+    backgroundColor: '#323E38',
+    borderColor: 'rgba(255, 255, 255, 0.24)',
+  },
+  tabButtonPressed: {
+    transform: [{ scale: 0.94 }],
+    opacity: 0.85,
   },
 });
