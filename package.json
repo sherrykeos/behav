@@ -7,7 +7,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "tsc src/services/analytics/analyticsEngine.ts src/utils/date.ts --outDir .test-dist --module commonjs --target es2022 --moduleResolution node --skipLibCheck --ignoreConfig --ignoreDeprecations 6.0 && node --test tests/analyticsEngine.test.js tests/databaseCalculations.test.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
