@@ -100,6 +100,14 @@ export function hasAcceptedBackupExtension(filename?: string): boolean {
   return lower.endsWith('.json');
 }
 
+export interface RecordBounds {
+  earliestDate: string | null;
+  latestDate: string | null;
+  totalEntries: number;
+  recordedDaysCount: number;
+  recordedDates: string[];
+}
+
 export class BackupRepository {
   private db: SQLiteDatabase;
 
@@ -108,9 +116,42 @@ export class BackupRepository {
   }
 
   /**
-   * Generates complete canonical BHFile v1 JSON backup payload
+   * Retrieves earliest, latest dates and distinct recorded dates
    */
-  async createBackup(): Promise<BHFileV1> {
+  async getRecordBounds(): Promise<RecordBounds> {
+    const row = await this.db.getFirstAsync<{
+      min_date: string | null;
+      max_date: string | null;
+      total: number;
+    }>(
+      `SELECT 
+         MIN(substr(occurred_at, 1, 10)) as min_date,
+         MAX(substr(occurred_at, 1, 10)) as max_date,
+         COUNT(*) as total
+       FROM log_entries;`
+    );
+
+    const dateRows = await this.db.getAllAsync<{ record_date: string }>(
+      `SELECT DISTINCT substr(occurred_at, 1, 10) as record_date
+       FROM log_entries
+       ORDER BY record_date ASC;`
+    );
+
+    const recordedDates = dateRows.map((r) => r.record_date);
+
+    return {
+      earliestDate: row?.min_date || null,
+      latestDate: row?.max_date || null,
+      totalEntries: Number(row?.total || 0),
+      recordedDaysCount: recordedDates.length,
+      recordedDates,
+    };
+  }
+
+  /**
+   * Generates complete canonical BHFile v1 JSON backup payload, optionally bounded by date
+   */
+  async createBackup(options?: { startDate?: string; endDate?: string }): Promise<BHFileV1> {
     interface RawBehaviorRow {
       id: string;
       name: string;
@@ -125,13 +166,29 @@ export class BackupRepository {
       value: number;
     }
 
+    let logQuery = 'SELECT occurred_at, behavior_id, value FROM log_entries';
+    const params: string[] = [];
+    const conditions: string[] = [];
+
+    if (options?.startDate) {
+      conditions.push('substr(occurred_at, 1, 10) >= ?');
+      params.push(options.startDate);
+    }
+    if (options?.endDate) {
+      conditions.push('substr(occurred_at, 1, 10) <= ?');
+      params.push(options.endDate);
+    }
+
+    if (conditions.length > 0) {
+      logQuery += ' WHERE ' + conditions.join(' AND ');
+    }
+    logQuery += ' ORDER BY occurred_at ASC;';
+
     const [behaviorsRows, logRows] = await Promise.all([
       this.db.getAllAsync<RawBehaviorRow>(
         'SELECT id, name, unit, created_at, archived_at FROM behaviors WHERE archived_at IS NULL ORDER BY created_at ASC;'
       ),
-      this.db.getAllAsync<RawLogRow>(
-        'SELECT occurred_at, behavior_id, value FROM log_entries ORDER BY occurred_at ASC;'
-      ),
+      this.db.getAllAsync<RawLogRow>(logQuery, params),
     ]);
 
     const habits: BHFileV1Habit[] = behaviorsRows.map((r) => ({
@@ -615,7 +672,7 @@ export class BackupRepository {
   /**
    * Generates RFC 4180 compliant CSV string of all activity logs joined with behavior info
    */
-  async exportLogsToCsv(): Promise<string> {
+  async exportLogsToCsv(options?: { startDate?: string; endDate?: string }): Promise<string> {
     interface JoinedLogRow {
       id: string;
       behavior_id: string;
@@ -628,7 +685,7 @@ export class BackupRepository {
       created_at: string;
     }
 
-    const rows = await this.db.getAllAsync<JoinedLogRow>(`
+    let query = `
       SELECT 
         l.id,
         l.behavior_id,
@@ -641,8 +698,25 @@ export class BackupRepository {
         l.created_at
       FROM log_entries l
       JOIN behaviors b ON l.behavior_id = b.id
-      ORDER BY l.occurred_at DESC;
-    `);
+    `;
+    const conditions: string[] = [];
+    const params: string[] = [];
+
+    if (options?.startDate) {
+      conditions.push('substr(l.occurred_at, 1, 10) >= ?');
+      params.push(options.startDate);
+    }
+    if (options?.endDate) {
+      conditions.push('substr(l.occurred_at, 1, 10) <= ?');
+      params.push(options.endDate);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    query += ' ORDER BY l.occurred_at DESC;';
+
+    const rows = await this.db.getAllAsync<JoinedLogRow>(query, params);
 
     const header = [
       'id',
