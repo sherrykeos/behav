@@ -938,4 +938,15 @@ export class BackupRepository {
 
     return [header, ...lines].join('\r\n');
   }
+
+  /**
+   * Completely clears all user records, habits, and goals from the database.
+   */
+  async clearAllAppData(): Promise<void> {
+    await this.db.execAsync(`
+      DELETE FROM log_entries;
+      DELETE FROM goals;
+      DELETE FROM behaviors;
+    `);
+  }
 }

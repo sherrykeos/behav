@@ -72,6 +72,9 @@ interface BehaviorContextValue {
   setDailyQuantity: (behaviorId: string, value: number, dateInput?: string | Date, note?: string | null) => Promise<LogEntry>;
   getMultiHabitWeekData: (anchorDate?: string) => Promise<import('@/db').MultiHabitWeekData>;
   getUnifiedStats: (anchorDate?: string) => Promise<import('@/db').UnifiedStatsData>;
+  getAvailableYears: () => Promise<number[]>;
+  getYearMatrixData: (year?: number) => Promise<import('@/db').YearMatrixData>;
+  getCustomPeriodStats: (fromDate: string, toDate: string, filterHabitIds?: string[]) => Promise<import('@/db').CustomPeriodStats>;
   // Record bounds & inspection
   getRecordBounds: () => Promise<import('@/db').RecordBounds>;
   // Backup & Restore operations
@@ -81,6 +84,7 @@ interface BehaviorContextValue {
   restoreBackupData: (backup: import('@/db').BehavBackupFile, mode?: 'merge' | 'replace') => Promise<import('@/db').RestoreResult>;
   exportLogsCsv: (options?: { startDate?: string; endDate?: string }) => Promise<string>;
   exportBehaviorsCsv: () => Promise<string>;
+  clearAllAppData: () => Promise<void>;
   // Utilities
   getEntriesForDate: (date: string | Date) => Promise<LogEntryWithBehavior[]>;
   getSummariesForDate: (date: string | Date) => Promise<DailyBehaviorSummary[]>;
@@ -317,6 +321,21 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return repos.insights.getUnifiedStats(anchorDate);
   }, [repos]);
 
+  const getAvailableYears = useCallback(async () => {
+    return repos.insights.getAvailableYears();
+  }, [repos]);
+
+  const getYearMatrixData = useCallback(async (year?: number) => {
+    return repos.insights.getYearMatrixData(year);
+  }, [repos]);
+
+  const getCustomPeriodStats = useCallback(
+    async (fromDate: string, toDate: string, filterHabitIds?: string[]) => {
+      return repos.insights.getCustomPeriodStats(fromDate, toDate, filterHabitIds);
+    },
+    [repos]
+  );
+
   const getRecordBounds = useCallback(async () => {
     return repos.backup.getRecordBounds();
   }, [repos]);
@@ -346,6 +365,11 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const exportBehaviorsCsv = useCallback(async () => {
     return repos.backup.exportBehaviorsToCsv();
   }, [repos]);
+
+  const clearAllAppData = useCallback(async (): Promise<void> => {
+    await repos.backup.clearAllAppData();
+    await refreshData();
+  }, [repos, refreshData]);
 
   const getEntriesForDate = useCallback(async (date: string | Date): Promise<LogEntryWithBehavior[]> => {
     return repos.logEntries.getByDate(date);
@@ -392,6 +416,9 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       getHomeDashboardStats,
       getMultiHabitWeekData,
       getUnifiedStats,
+      getAvailableYears,
+      getYearMatrixData,
+      getCustomPeriodStats,
       getRecordBounds,
       createBackupData,
       validateBackupContent,
@@ -399,6 +426,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       restoreBackupData,
       exportLogsCsv,
       exportBehaviorsCsv,
+      clearAllAppData,
       getEntriesForDate,
       getSummariesForDate,
       deleteEntriesForDate,
@@ -431,6 +459,9 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       getHomeDashboardStats,
       getMultiHabitWeekData,
       getUnifiedStats,
+      getAvailableYears,
+      getYearMatrixData,
+      getCustomPeriodStats,
       getRecordBounds,
       createBackupData,
       validateBackupContent,
@@ -438,8 +469,10 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       restoreBackupData,
       exportLogsCsv,
       exportBehaviorsCsv,
+      clearAllAppData,
       getEntriesForDate,
       getSummariesForDate,
+      deleteEntriesForDate,
     ]
   );
 

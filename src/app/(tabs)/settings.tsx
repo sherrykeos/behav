@@ -11,6 +11,7 @@ import { ScreenWrapper, Card } from '@/components/common';
 import { RestoreModal } from '@/components/settings/RestoreModal';
 import { EditProfileModal } from '@/components/settings/EditProfileModal';
 import { ExportDatePickerModal } from '@/components/settings/ExportDatePickerModal';
+import { ClearDataModal } from '@/components/settings/ClearDataModal';
 import { BehaviorModal, renderHabitLogo } from '@/components/behaviors/BehaviorModal';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useBehaviors } from '@/context/BehaviorContext';
@@ -39,6 +40,7 @@ export default function SettingsScreen() {
     validateBackupContent,
     restoreBackupData,
     getRecordBounds,
+    clearAllAppData,
   } = useBehaviors();
 
   // Record boundaries (earliest and latest record dates)
@@ -67,6 +69,7 @@ export default function SettingsScreen() {
   const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [restoreModalVisible, setRestoreModalVisible] = useState(false);
+  const [clearModalVisible, setClearModalVisible] = useState(false);
   const [behaviorModalVisible, setBehaviorModalVisible] = useState(false);
   const [selectedBehaviorToEdit, setSelectedBehaviorToEdit] = useState<Behavior | null>(null);
 
@@ -74,6 +77,7 @@ export default function SettingsScreen() {
   const [selectedBackup, setSelectedBackup] = useState<BHFile | null>(null);
   const [selectedFilename, setSelectedFilename] = useState<string>('');
   const [isReadingFile, setIsReadingFile] = useState(false);
+  const [isInstantBackingUp, setIsInstantBackingUp] = useState(false);
 
   // Status & Feedback banners
   const [statusMessage, setStatusMessage] = useState<{
@@ -133,6 +137,46 @@ export default function SettingsScreen() {
         type: 'error',
         text: err?.message || 'Failed to delete habit.',
       });
+    }
+  };
+
+  /**
+   * 1-Tap Instant Full Backup:
+   * Backs up whole app data (entire data from beginning to now) without date filters
+   */
+  const handleInstantFullBackup = async (): Promise<boolean> => {
+    setIsInstantBackingUp(true);
+    try {
+      const backup = await createBackupData();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const filename = `Behav-Full-Backup-${todayStr}.json`;
+      const jsonContent = JSON.stringify(backup, null, 2);
+      const result = await exportFile(jsonContent, filename, 'application/json');
+
+      if (result.success) {
+        const habitCount = 'habits' in backup ? backup.habits.length : backup.data.behaviors.length;
+        const dayCount = 'days' in backup ? backup.days.length : (backup.data.records?.length ?? 0);
+        setStatusMessage({
+          type: 'success',
+          text: `Full backup exported: ${filename} (${habitCount} habits, ${dayCount} days). Entire history saved.`,
+        });
+        setLastBackupTime(getCurrentIsoTimestamp());
+        return true;
+      } else {
+        setStatusMessage({
+          type: 'error',
+          text: result.error || 'Failed to export full backup file.',
+        });
+        return false;
+      }
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err?.message || 'Full backup export failed.',
+      });
+      return false;
+    } finally {
+      setIsInstantBackingUp(false);
     }
   };
 
@@ -263,12 +307,32 @@ export default function SettingsScreen() {
     return result;
   };
 
+  /**
+   * Clear All App Data Handler
+   */
+  const handleConfirmClearAppData = async (): Promise<void> => {
+    try {
+      await clearAllAppData();
+      await loadBounds();
+      setStatusMessage({
+        type: 'success',
+        text: 'All app data has been permanently cleared. Behav has been reset.',
+      });
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err?.message || 'Failed to clear app data.',
+      });
+      throw err;
+    }
+  };
+
   return (
     <ScreenWrapper scrollable>
       {/* Screen Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Profile</Text>
-        <Text style={styles.subtitle}>Personal identity, habit management & data sovereignty</Text>
+        <Text style={styles.subtitle}>Identity, habit management & data sovereignty</Text>
       </View>
 
       {/* Operational Feedback Banner */}
@@ -298,22 +362,23 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* SECTION 1: User Detail and Edit Option */}
-      <Card style={styles.contentCard}>
+      {/* SECTION 1: User Profile & Identity Hero Card */}
+      <Card style={styles.profileHeroCard}>
         <View style={styles.profileHeader}>
-          {/* Avatar with Glow Ring */}
+          {/* Avatar with Halo Glow */}
           <View
             style={[
               styles.avatarContainer,
               {
                 backgroundColor: `${userProfile.avatarColor}1A`,
                 borderColor: userProfile.avatarColor,
+                shadowColor: userProfile.avatarColor,
               },
             ]}
           >
             <Ionicons
               name={userProfile.avatarIcon as any}
-              size={36}
+              size={34}
               color={userProfile.avatarColor}
             />
           </View>
@@ -324,16 +389,16 @@ export default function SettingsScreen() {
               <Text style={styles.userName}>{userProfile.name}</Text>
               <View style={styles.sovereignBadge}>
                 <View style={styles.greenDot} />
-                <Text style={styles.sovereignText}>Private</Text>
+                <Text style={styles.sovereignText}>Private & Offline</Text>
               </View>
             </View>
             <Text style={styles.userBio} numberOfLines={2}>
-              {userProfile.bio}
+              "{userProfile.bio || 'Tracking personal behavior patterns privately.'}"
             </Text>
           </View>
         </View>
 
-        {/* Quick Metrics Bar */}
+        {/* Executive Metrics Bar */}
         <View style={styles.metricsBar}>
           <View style={styles.metricItem}>
             <Text style={styles.metricValue}>{behaviors.length}</Text>
@@ -351,7 +416,7 @@ export default function SettingsScreen() {
                 ? formatFriendlyMonthYear(recordBounds.earliestDate)
                 : 'Today'}
             </Text>
-            <Text style={styles.metricLabel}>Since</Text>
+            <Text style={styles.metricLabel}>Tracking Since</Text>
           </View>
         </View>
 
@@ -361,18 +426,18 @@ export default function SettingsScreen() {
           onPress={() => setEditProfileModalVisible(true)}
           activeOpacity={0.7}
         >
-          <Ionicons name="pencil-sharp" size={15} color={colors.accentPrimary} />
-          <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+          <Ionicons name="create-outline" size={15} color={colors.accentPrimary} />
+          <Text style={styles.editProfileBtnText}>Edit Identity & Avatar</Text>
         </TouchableOpacity>
       </Card>
 
-      {/* SECTION: Manage Habit */}
+      {/* SECTION 2: Manage Habits */}
       <Card style={styles.contentCard}>
         <View style={styles.cardHeader}>
           <View style={{ flex: 1, paddingRight: spacing.sm }}>
             <Text style={styles.sectionTitle}>Manage Habits</Text>
             <Text style={styles.sectionSubtitle}>
-              Modify nicknames, daily targets, and custom home logos
+              Customize nicknames, daily targets, and custom logos
             </Text>
           </View>
           <TouchableOpacity
@@ -402,7 +467,7 @@ export default function SettingsScreen() {
                   key={behavior.id}
                   style={[styles.habitItemRow, !isLast && styles.habitItemDivider]}
                 >
-                  {/* Habit Logo: Displays the exact selected logo */}
+                  {/* Habit Logo */}
                   <View style={styles.habitLogoCircle}>
                     {renderHabitLogo(behavior.icon, 20, colors.accentPrimary)}
                   </View>
@@ -448,32 +513,63 @@ export default function SettingsScreen() {
         )}
       </Card>
 
-      {/* SECTION: Beautiful Import/Export Section */}
+      {/* SECTION 3: Data Sovereignty & Backups */}
       <Card style={styles.contentCard}>
         <View style={styles.cardHeader}>
           <View>
-            <Text style={styles.sectionTitle}>Import & Export</Text>
+            <Text style={styles.sectionTitle}>Data Sovereignty & Backups</Text>
             <Text style={styles.sectionSubtitle}>
-              Backup and migrate your records freely
+              Backup and migrate your full database freely
             </Text>
           </View>
         </View>
 
+        {/* Prominent 1-Tap Instant Backup Card */}
+        <View style={styles.instantBackupCard}>
+          <View style={styles.instantBackupHeader}>
+            <View style={styles.instantBackupIcon}>
+              <Ionicons name="flash" size={18} color="#101412" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.instantBackupTitle}>Instant Full Backup</Text>
+              <Text style={styles.instantBackupDesc}>
+                1-tap export of all habits, logs, and streaks from the beginning to now (.json)
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.instantBackupActionBtn}
+            onPress={handleInstantFullBackup}
+            disabled={isInstantBackingUp}
+            activeOpacity={0.8}
+          >
+            {isInstantBackingUp ? (
+              <ActivityIndicator size="small" color="#101412" />
+            ) : (
+              <Ionicons name="download-outline" size={16} color="#101412" />
+            )}
+            <Text style={styles.instantBackupActionBtnText}>
+              {isInstantBackingUp ? 'Exporting Full Database...' : '⚡ Export Entire App Data'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.actionsContainer}>
-          {/* Export Action with Date Picker */}
+          {/* Custom Date Picker Export Action */}
           <TouchableOpacity
             style={styles.actionRow}
             onPress={() => setExportModalVisible(true)}
             activeOpacity={0.7}
           >
             <View style={styles.rowIcon}>
-              <Ionicons name="cloud-upload-outline" size={20} color={colors.accentPrimary} />
+              <Ionicons name="calendar-outline" size={20} color={colors.accentPrimary} />
             </View>
             <View style={styles.rowContent}>
               <View style={styles.rowTitleRow}>
-                <Text style={styles.rowTitle}>Export Records</Text>
+                <Text style={styles.rowTitle}>Custom Export</Text>
                 <View style={styles.scopeTag}>
-                  <Text style={styles.scopeTagText}>Custom Date Picker</Text>
+                  <Text style={styles.scopeTagText}>Date Filter & CSV</Text>
                 </View>
               </View>
               <Text style={styles.rowDesc}>
@@ -502,7 +598,7 @@ export default function SettingsScreen() {
               )}
             </View>
             <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>Import Backup</Text>
+              <Text style={styles.rowTitle}>Import Backup File</Text>
               <Text style={styles.rowDesc}>
                 Restore habits and historical records from a .json file
               </Text>
@@ -522,22 +618,55 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      {/* SECTION: Small App Information */}
+      {/* SECTION 4: Danger Zone / Clear App Data */}
+      <Card style={styles.dangerCard}>
+        <View style={styles.dangerCardHeader}>
+          <View style={styles.dangerHeaderIcon}>
+            <Ionicons name="alert-circle" size={20} color={colors.danger} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.dangerCardTitle}>Danger Zone</Text>
+            <Text style={styles.dangerCardSubtitle}>
+              Permanent and irreversible database actions
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.dangerActionRow}>
+          <View style={{ flex: 1, paddingRight: spacing.sm }}>
+            <Text style={styles.dangerActionTitle}>Clear App Data</Text>
+            <Text style={styles.dangerActionDesc}>
+              Permanently delete all habits, records, and history from this device.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.clearAppBtn}
+            onPress={() => setClearModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="trash-outline" size={15} color="#FFFFFF" />
+            <Text style={styles.clearAppBtnText}>Clear App</Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+
+      {/* SECTION 5: Small App Information */}
       <Card variant="subtle" style={styles.infoCard}>
         <View style={styles.infoHeader}>
           <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
-          <Text style={styles.infoTitle}>App Information</Text>
+          <Text style={styles.infoTitle}>App Architecture</Text>
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoKey}>App Version</Text>
-          <Text style={styles.infoVal}>1.0.0</Text>
+          <Text style={styles.infoVal}>1.0.0 (Release Build)</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoKey}>Database</Text>
+          <Text style={styles.infoKey}>Database Engine</Text>
           <Text style={styles.infoVal}>SQLite (behav.db)</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoKey}>Storage</Text>
+          <Text style={styles.infoKey}>Storage Privacy</Text>
           <Text style={styles.infoVal}>100% Offline & Private</Text>
         </View>
       </Card>
@@ -577,6 +706,16 @@ export default function SettingsScreen() {
         filename={selectedFilename}
         onClose={() => setRestoreModalVisible(false)}
         onConfirmRestore={handleConfirmRestore}
+      />
+
+      {/* Clear App Data Warning & Backup Modal */}
+      <ClearDataModal
+        visible={clearModalVisible}
+        onClose={() => setClearModalVisible(false)}
+        onConfirmClear={handleConfirmClearAppData}
+        onShortcutBackup={handleInstantFullBackup}
+        recordBounds={recordBounds}
+        habitCount={behaviors.length}
       />
     </ScreenWrapper>
   );
@@ -618,10 +757,15 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 18,
   },
+  profileHeroCard: {
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
   contentCard: {
     marginBottom: spacing.md,
   },
-  // Section 1: User Detail styles
+  // Section 1: User Profile Hero styles
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -629,12 +773,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   avatarContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   profileDetails: {
     flex: 1,
@@ -643,39 +791,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    flexWrap: 'wrap',
   },
   userName: {
     ...typography.titleMedium,
     color: colors.textPrimary,
+    fontWeight: '700',
   },
   sovereignBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: colors.surfaceSubtle,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.full,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
   greenDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: colors.accentPrimary,
   },
   sovereignText: {
     ...typography.labelSmall,
     color: colors.accentPrimary,
     fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
   userBio: {
     ...typography.bodySmall,
     color: colors.textSecondary,
-    marginTop: 3,
+    marginTop: 4,
     lineHeight: 18,
+    fontStyle: 'italic',
   },
   metricsBar: {
     flexDirection: 'row',
@@ -683,7 +836,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     backgroundColor: colors.surfaceSubtle,
     borderRadius: radii.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
@@ -695,7 +848,8 @@ const styles = StyleSheet.create({
   metricValue: {
     ...typography.labelLarge,
     color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 16,
+    fontWeight: '700',
   },
   metricLabel: {
     ...typography.labelSmall,
@@ -705,7 +859,7 @@ const styles = StyleSheet.create({
   },
   metricDivider: {
     width: 1,
-    height: 24,
+    height: 26,
     backgroundColor: colors.borderSubtle,
   },
   editProfileBtn: {
@@ -722,8 +876,9 @@ const styles = StyleSheet.create({
   editProfileBtnText: {
     ...typography.labelMedium,
     color: colors.accentPrimary,
+    fontWeight: '600',
   },
-  // Section: Manage Habit styles
+  // Section 2: Manage Habit styles
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -732,6 +887,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.titleSmall,
+    color: colors.textPrimary,
   },
   sectionSubtitle: {
     ...typography.bodySmall,
@@ -744,7 +900,7 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: colors.accentPrimary,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: radii.sm,
   },
   addHabitBtnText: {
@@ -813,6 +969,7 @@ const styles = StyleSheet.create({
     ...typography.labelLarge,
     fontSize: 14,
     color: colors.textPrimary,
+    fontWeight: '600',
   },
   habitCategoryTag: {
     backgroundColor: colors.surface,
@@ -849,7 +1006,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Section: Import/Export styles
+  // Section 3: Data Sovereignty & Backups
+  instantBackupCard: {
+    backgroundColor: `${colors.accentPrimary}10`,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: `${colors.accentPrimary}30`,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  instantBackupHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  instantBackupIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.accentPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  instantBackupTitle: {
+    ...typography.labelLarge,
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  instantBackupDesc: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  instantBackupActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.accentPrimary,
+    paddingVertical: 9,
+    borderRadius: radii.sm,
+    marginTop: 2,
+  },
+  instantBackupActionBtnText: {
+    ...typography.labelMedium,
+    color: '#101412',
+    fontWeight: '700',
+    fontSize: 12,
+  },
   actionsContainer: {
     backgroundColor: colors.surfaceSubtle,
     borderRadius: radii.md,
@@ -917,7 +1125,75 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 11,
   },
-  // Section: App Information styles
+  // Section 4: Danger Zone styles
+  dangerCard: {
+    marginBottom: spacing.md,
+    borderColor: `${colors.danger}35`,
+    backgroundColor: '#161313',
+  },
+  dangerCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  dangerHeaderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: `${colors.danger}20`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dangerCardTitle: {
+    ...typography.titleSmall,
+    color: colors.danger,
+    fontWeight: '700',
+  },
+  dangerCardSubtitle: {
+    ...typography.bodySmall,
+    color: colors.textTertiary,
+    fontSize: 12,
+    marginTop: 1,
+  },
+  dangerActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: `${colors.danger}25`,
+  },
+  dangerActionTitle: {
+    ...typography.labelLarge,
+    color: colors.textPrimary,
+    fontSize: 14,
+  },
+  dangerActionDesc: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  clearAppBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.danger,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: radii.sm,
+  },
+  clearAppBtnText: {
+    ...typography.labelSmall,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  // Section 5: App Information styles
   infoCard: {
     marginBottom: spacing.xl,
   },
