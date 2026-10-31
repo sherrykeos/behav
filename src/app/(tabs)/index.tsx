@@ -101,7 +101,12 @@ const StatGauge: React.FC<StatGaugeProps> = ({
   );
 };
 
-const getHabitIcon = (name: string, category?: string | null) => {
+import { renderHabitLogo } from '@/components/behaviors/BehaviorModal';
+
+const getHabitIcon = (name: string, category?: string | null, customIcon?: string | null) => {
+  if (customIcon) {
+    return renderHabitLogo(customIcon, 24, colors.textPrimary);
+  }
   const lower = (name + ' ' + (category || '')).toLowerCase();
   if (lower.includes('smoke') || lower.includes('cigar') || lower.includes('vape')) {
     return <MaterialCommunityIcons name="smoking" size={24} color={colors.textPrimary} />;
@@ -135,35 +140,21 @@ const getHabitIcon = (name: string, category?: string | null) => {
 
 const getHabitSubtitle = (behavior: {
   name: string;
+  nickname?: string | null;
+  subtitle?: string | null;
   description: string | null;
   unit: string;
   dailyLimit: number | null;
 }) => {
+  // If user entered a custom subtitle, display that below the nickname
+  if (behavior.subtitle && behavior.subtitle.trim().length > 0) {
+    return behavior.subtitle.trim();
+  }
+  // If description exists, fallback to description
   if (behavior.description && behavior.description.trim().length > 0) {
-    return behavior.description;
+    return behavior.description.trim();
   }
-  const lower = behavior.name.toLowerCase();
-  if (lower.includes('smoke') || lower.includes('cigar') || lower.includes('vape')) {
-    return 'Keep it down. You got this.';
-  }
-  if (
-    lower.includes('masturbat') ||
-    lower.includes('porn') ||
-    lower.includes('fap') ||
-    lower.includes('nofap')
-  ) {
-    return 'Discipline creates freedom.';
-  }
-  if (lower.includes('alcohol') || lower.includes('beer') || lower.includes('drink')) {
-    return 'Clarity begins with restraint.';
-  }
-  if (lower.includes('phone') || lower.includes('screen') || lower.includes('scroll')) {
-    return 'Reclaim your focus and time.';
-  }
-  if (behavior.dailyLimit !== null) {
-    return `Limit: ${behavior.dailyLimit} ${behavior.unit || 'times'} daily`;
-  }
-  return 'Discipline creates freedom.';
+  return '';
 };
 
 export default function HomeScreen() {
@@ -177,6 +168,7 @@ export default function HomeScreen() {
     deleteLogEntry,
     createBehavior,
     getHomeDashboardStats,
+    userProfile,
   } = useBehaviors();
 
   const [dashStats, setDashStats] = useState<DashboardData | null>(null);
@@ -206,33 +198,8 @@ export default function HomeScreen() {
   const currentStreakProgress = Math.min(1, currentStreakCount / Math.max(1, daysInMonth, maxStreakCount));
   const maxStreakProgress = Math.min(1, maxStreakCount / Math.max(1, daysInMonth, 30));
 
-  // User name state (persisted in SQLite, defaults to Sherry)
-  const db = useSQLiteContext();
-  const [userName, setUserName] = useState('Sherry');
-
-  // Load user name from SQLite app_settings
-  useEffect(() => {
-    async function loadUserName() {
-      try {
-        await db.execAsync(`
-          CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY NOT NULL,
-            value TEXT NOT NULL
-          );
-        `);
-        const row = await db.getFirstAsync<{ value: string }>(
-          'SELECT value FROM app_settings WHERE key = ?;',
-          ['user_name']
-        );
-        if (row?.value) {
-          setUserName(row.value);
-        }
-      } catch (err) {
-        // quiet fallback
-      }
-    }
-    loadUserName();
-  }, [db]);
+  // User name dynamically sourced from UserProfile (defaults to Sherry)
+  const userName = userProfile?.name || 'Sherry';
 
   // Clock state to update greeting and date dynamically every minute
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -675,7 +642,7 @@ export default function HomeScreen() {
                       onPress={() => handleOpenDetailedLog(behavior.id)}
                       activeOpacity={0.7}
                     >
-                      {getHabitIcon(behavior.name, behavior.category)}
+                      {getHabitIcon(behavior.name, behavior.category, behavior.icon)}
                     </TouchableOpacity>
 
                     {/* Middle: Habit Name & Subtitle */}
@@ -684,10 +651,12 @@ export default function HomeScreen() {
                       onPress={() => handleOpenDetailedLog(behavior.id)}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.habitTitle}>{behavior.name}</Text>
-                      <Text style={styles.habitSubtitle} numberOfLines={1}>
-                        {getHabitSubtitle(behavior)}
-                      </Text>
+                      <Text style={styles.habitTitle}>{behavior.nickname || behavior.name}</Text>
+                      {!!getHabitSubtitle(behavior) && (
+                        <Text style={styles.habitSubtitle} numberOfLines={1}>
+                          {getHabitSubtitle(behavior)}
+                        </Text>
+                      )}
                     </TouchableOpacity>
 
                     {/* Right: Stepper Pill [-] N [+] */}
