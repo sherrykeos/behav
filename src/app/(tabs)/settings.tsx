@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,23 +7,72 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenWrapper, Card, Badge } from '@/components/common';
+import { ScreenWrapper, Card } from '@/components/common';
 import { RestoreModal } from '@/components/settings/RestoreModal';
+import { EditProfileModal } from '@/components/settings/EditProfileModal';
+import { ExportDatePickerModal } from '@/components/settings/ExportDatePickerModal';
+import { BehaviorModal, renderHabitLogo } from '@/components/behaviors/BehaviorModal';
 import { colors, radii, spacing, typography } from '@/theme';
 import { useBehaviors } from '@/context/BehaviorContext';
 import { exportFile, pickAndReadFile } from '@/utils/fileExport';
-import { toDayString, getCurrentIsoTimestamp, formatFriendlyDate } from '@/utils/date';
-import type { BHFile, RestoreResult } from '@/db';
+import { getCurrentIsoTimestamp, formatFriendlyDate } from '@/utils/date';
+import type { BHFile, RestoreResult, RecordBounds } from '@/db';
+import type { Behavior, CreateBehaviorInput } from '@/types/database';
+
+function formatFriendlyMonthYear(dateString: string): string {
+  if (!dateString) return 'Today';
+  const [y, m] = dateString.split('-').map(Number);
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+}
 
 export default function SettingsScreen() {
   const {
+    behaviors,
+    userProfile,
+    updateUserProfile,
+    createBehavior,
+    updateBehavior,
+    deleteBehavior,
     createBackupData,
+    exportLogsCsv,
     validateBackupContent,
     restoreBackupData,
+    getRecordBounds,
   } = useBehaviors();
 
-  // Export / Restore UI states
-  const [isExporting, setIsExporting] = useState(false);
+  // Record boundaries (earliest and latest record dates)
+  const [recordBounds, setRecordBounds] = useState<RecordBounds>({
+    earliestDate: null,
+    latestDate: null,
+    totalEntries: 0,
+    recordedDaysCount: 0,
+    recordedDates: [],
+  });
+
+  const loadBounds = useCallback(async () => {
+    try {
+      const bounds = await getRecordBounds();
+      setRecordBounds(bounds);
+    } catch {
+      // quiet fallback
+    }
+  }, [getRecordBounds]);
+
+  useEffect(() => {
+    loadBounds();
+  }, [loadBounds, behaviors]);
+
+  // Modal visibility states
+  const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [restoreModalVisible, setRestoreModalVisible] = useState(false);
+  const [behaviorModalVisible, setBehaviorModalVisible] = useState(false);
+  const [selectedBehaviorToEdit, setSelectedBehaviorToEdit] = useState<Behavior | null>(null);
+
+  // Restore states
+  const [selectedBackup, setSelectedBackup] = useState<BHFile | null>(null);
+  const [selectedFilename, setSelectedFilename] = useState<string>('');
   const [isReadingFile, setIsReadingFile] = useState(false);
 
   // Status & Feedback banners
@@ -32,64 +81,132 @@ export default function SettingsScreen() {
     text: string;
   } | null>(null);
 
-  // Restore Modal states
-  const [restoreModalVisible, setRestoreModalVisible] = useState(false);
-  const [selectedBackup, setSelectedBackup] = useState<BHFile | null>(null);
-  const [selectedFilename, setSelectedFilename] = useState<string>('');
-
   // Track last backup time in memory
   const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
 
   /**
-   * Handle JSON Backup creation and export
+   * Habit Management Handlers
    */
-  const handleExportBackup = async () => {
-    setIsExporting(true);
-    setStatusMessage(null);
+  const handleOpenAddHabit = () => {
+    setSelectedBehaviorToEdit(null);
+    setBehaviorModalVisible(true);
+  };
 
+  const handleOpenEditHabit = (b: Behavior) => {
+    setSelectedBehaviorToEdit(b);
+    setBehaviorModalVisible(true);
+  };
+
+  const handleSaveHabit = async (data: CreateBehaviorInput) => {
     try {
-      const backup = await createBackupData();
-      const today = toDayString();
-      const filename = `Behav-Backup-${today}.json`;
-      const jsonContent = JSON.stringify(backup, null, 2);
-
-      const result = await exportFile(jsonContent, filename, 'application/json');
-
-      if (result.success) {
-        const now = getCurrentIsoTimestamp();
-        setLastBackupTime(now);
-        const habitCount = 'habits' in backup ? backup.habits.length : backup.data.behaviors.length;
-        const recordCount = 'days' in backup ? backup.days.length : (backup.data.records?.length ?? (backup.data as any).logEntries?.length ?? 0);
-        const recordLabel = 'days' in backup ? 'days' : 'records';
+      if (selectedBehaviorToEdit) {
+        await updateBehavior(selectedBehaviorToEdit.id, data);
         setStatusMessage({
           type: 'success',
-          text: `Backup verified and saved: ${filename} (${habitCount} habits, ${recordCount} ${recordLabel}).`,
+          text: `Habit "${data.nickname || data.name}" updated successfully.`,
         });
       } else {
+        await createBehavior(data);
         setStatusMessage({
-          type: 'error',
-          text: result.error || 'Failed to export backup file.',
+          type: 'success',
+          text: `Habit "${data.nickname || data.name}" created successfully.`,
         });
       }
     } catch (err: any) {
       setStatusMessage({
         type: 'error',
-        text: err?.message || 'Failed to generate backup.',
+        text: err?.message || 'Failed to save habit.',
       });
-    } finally {
-      setIsExporting(false);
+    }
+  };
+
+  const handleDeleteHabit = async (id: string) => {
+    try {
+      await deleteBehavior(id);
+      await loadBounds();
+      setStatusMessage({
+        type: 'success',
+        text: 'Habit deleted successfully.',
+      });
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err?.message || 'Failed to delete habit.',
+      });
     }
   };
 
   /**
-   * Handle unified Import Backup (accepting .json)
+   * Handle validated Export submission from ExportDatePickerModal
+   */
+  const handleExportConfirmed = async (options: {
+    startDate?: string;
+    endDate?: string;
+    format: 'json' | 'csv';
+    filenameSummary: string;
+  }) => {
+    const { startDate, endDate, format, filenameSummary } = options;
+    try {
+      if (format === 'json') {
+        const backup = await createBackupData({ startDate, endDate });
+        const filename = `Behav-Backup-${filenameSummary}.json`;
+        const jsonContent = JSON.stringify(backup, null, 2);
+        const result = await exportFile(jsonContent, filename, 'application/json');
+
+        if (result.success) {
+          const habitCount = 'habits' in backup ? backup.habits.length : backup.data.behaviors.length;
+          const dayCount = 'days' in backup ? backup.days.length : (backup.data.records?.length ?? 0);
+          setStatusMessage({
+            type: 'success',
+            text: `Backup exported: ${filename} (${habitCount} habits, ${dayCount} days included).`,
+          });
+          setLastBackupTime(getCurrentIsoTimestamp());
+        } else {
+          setStatusMessage({
+            type: 'error',
+            text: result.error || 'Failed to export backup file.',
+          });
+        }
+      } else {
+        const csvContent = await exportLogsCsv({ startDate, endDate });
+        const filename = `Behav-Logs-${filenameSummary}.csv`;
+        const result = await exportFile(csvContent, filename, 'text/csv');
+
+        if (result.success) {
+          setStatusMessage({
+            type: 'success',
+            text: `CSV exported: ${filename}`,
+          });
+          setLastBackupTime(getCurrentIsoTimestamp());
+        } else {
+          setStatusMessage({
+            type: 'error',
+            text: result.error || 'Failed to export CSV file.',
+          });
+        }
+      }
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err?.message || 'Export failed.',
+      });
+    }
+  };
+
+  /**
+   * Handle Import Backup (accepting standard .json)
    */
   const handlePickAndRestore = async () => {
     setIsReadingFile(true);
     setStatusMessage(null);
 
     try {
-      const pickResult = await pickAndReadFile(['*/*', 'application/json', 'application/octet-stream', 'text/*']);
+      const pickResult = await pickAndReadFile([
+        '*/*',
+        'application/json',
+        'application/octet-stream',
+        'text/*',
+      ]);
 
       if (pickResult.cancelled) {
         setIsReadingFile(false);
@@ -138,6 +255,7 @@ export default function SettingsScreen() {
       throw new Error('No backup selected for restore.');
     }
     const result = await restoreBackupData(selectedBackup, mode);
+    await loadBounds();
     setStatusMessage({
       type: 'success',
       text: `Restore complete: ${result.restoredBehaviors} habits, ${result.restoredLogs} records restored.`,
@@ -147,11 +265,10 @@ export default function SettingsScreen() {
 
   return (
     <ScreenWrapper scrollable>
+      {/* Screen Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>
-          Data portability, backups, and app controls
-        </Text>
+        <Text style={styles.title}>Profile</Text>
+        <Text style={styles.subtitle}>Personal identity, habit management & data sovereignty</Text>
       </View>
 
       {/* Operational Feedback Banner */}
@@ -181,36 +298,188 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* Section 1: JSON Backup & Restore */}
+      {/* SECTION 1: User Detail and Edit Option */}
+      <Card style={styles.contentCard}>
+        <View style={styles.profileHeader}>
+          {/* Avatar with Glow Ring */}
+          <View
+            style={[
+              styles.avatarContainer,
+              {
+                backgroundColor: `${userProfile.avatarColor}1A`,
+                borderColor: userProfile.avatarColor,
+              },
+            ]}
+          >
+            <Ionicons
+              name={userProfile.avatarIcon as any}
+              size={36}
+              color={userProfile.avatarColor}
+            />
+          </View>
+
+          {/* User Details */}
+          <View style={styles.profileDetails}>
+            <View style={styles.nameRow}>
+              <Text style={styles.userName}>{userProfile.name}</Text>
+              <View style={styles.sovereignBadge}>
+                <View style={styles.greenDot} />
+                <Text style={styles.sovereignText}>Private</Text>
+              </View>
+            </View>
+            <Text style={styles.userBio} numberOfLines={2}>
+              {userProfile.bio}
+            </Text>
+          </View>
+        </View>
+
+        {/* Quick Metrics Bar */}
+        <View style={styles.metricsBar}>
+          <View style={styles.metricItem}>
+            <Text style={styles.metricValue}>{behaviors.length}</Text>
+            <Text style={styles.metricLabel}>Habits</Text>
+          </View>
+          <View style={styles.metricDivider} />
+          <View style={styles.metricItem}>
+            <Text style={styles.metricValue}>{recordBounds.recordedDaysCount}</Text>
+            <Text style={styles.metricLabel}>Days Logged</Text>
+          </View>
+          <View style={styles.metricDivider} />
+          <View style={styles.metricItem}>
+            <Text style={styles.metricValue}>
+              {recordBounds.earliestDate
+                ? formatFriendlyMonthYear(recordBounds.earliestDate)
+                : 'Today'}
+            </Text>
+            <Text style={styles.metricLabel}>Since</Text>
+          </View>
+        </View>
+
+        {/* Edit Profile Action Button */}
+        <TouchableOpacity
+          style={styles.editProfileBtn}
+          onPress={() => setEditProfileModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="pencil-sharp" size={15} color={colors.accentPrimary} />
+          <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+        </TouchableOpacity>
+      </Card>
+
+      {/* SECTION: Manage Habit */}
+      <Card style={styles.contentCard}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1, paddingRight: spacing.sm }}>
+            <Text style={styles.sectionTitle}>Manage Habits</Text>
+            <Text style={styles.sectionSubtitle}>
+              Modify nicknames, daily targets, and custom home logos
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.addHabitBtn}
+            onPress={handleOpenAddHabit}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add" size={16} color="#101412" />
+            <Text style={styles.addHabitBtnText}>Add Habit</Text>
+          </TouchableOpacity>
+        </View>
+
+        {behaviors.length === 0 ? (
+          <View style={styles.emptyHabitBox}>
+            <Ionicons name="sparkles-outline" size={28} color={colors.textTertiary} />
+            <Text style={styles.emptyHabitText}>No habits active yet</Text>
+            <Text style={styles.emptyHabitSubtext}>
+              Tap "Add Habit" to track your first behavior with a custom nickname and logo.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.habitList}>
+            {behaviors.map((behavior, index) => {
+              const isLast = index === behaviors.length - 1;
+              return (
+                <View
+                  key={behavior.id}
+                  style={[styles.habitItemRow, !isLast && styles.habitItemDivider]}
+                >
+                  {/* Habit Logo: Displays the exact selected logo */}
+                  <View style={styles.habitLogoCircle}>
+                    {renderHabitLogo(behavior.icon, 20, colors.accentPrimary)}
+                  </View>
+
+                  {/* Habit Details */}
+                  <View style={styles.habitMetaCol}>
+                    <View style={styles.habitNameRow}>
+                      <Text style={styles.habitNameTitle}>
+                        {behavior.nickname || behavior.name}
+                      </Text>
+                      {behavior.category && (
+                        <View style={styles.habitCategoryTag}>
+                          <Text style={styles.habitCategoryText}>{behavior.category}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {!!behavior.subtitle && (
+                      <Text style={styles.habitSubtitleText} numberOfLines={1}>
+                        {behavior.subtitle}
+                      </Text>
+                    )}
+                    <Text style={styles.habitQuantityText}>
+                      {behavior.dailyLimit
+                        ? `Target: ${behavior.dailyLimit} ${behavior.unit}/day`
+                        : `Unit: ${behavior.unit}`}
+                    </Text>
+                  </View>
+
+                  {/* Edit Habit Button */}
+                  <TouchableOpacity
+                    style={styles.habitEditBtn}
+                    onPress={() => handleOpenEditHabit(behavior)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color={colors.accentPrimary} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </Card>
+
+      {/* SECTION: Beautiful Import/Export Section */}
       <Card style={styles.contentCard}>
         <View style={styles.cardHeader}>
           <View>
-            <Text style={styles.sectionTitle}>Full Data Backup</Text>
+            <Text style={styles.sectionTitle}>Import & Export</Text>
             <Text style={styles.sectionSubtitle}>
-              Standard JSON backup format (.json files)
+              Backup and migrate your records freely
             </Text>
           </View>
-          <Badge label="JSON v1" variant="lavender" />
         </View>
 
-        <View style={styles.backupActions}>
+        <View style={styles.actionsContainer}>
+          {/* Export Action with Date Picker */}
           <TouchableOpacity
             style={styles.actionRow}
-            onPress={handleExportBackup}
-            disabled={isExporting}
+            onPress={() => setExportModalVisible(true)}
             activeOpacity={0.7}
           >
             <View style={styles.rowIcon}>
-              {isExporting ? (
-                <ActivityIndicator size="small" color={colors.accentPrimaryDark} />
-              ) : (
-                <Ionicons name="cloud-upload-outline" size={20} color={colors.accentPrimaryDark} />
-              )}
+              <Ionicons name="cloud-upload-outline" size={20} color={colors.accentPrimary} />
             </View>
             <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>Export JSON Backup</Text>
+              <View style={styles.rowTitleRow}>
+                <Text style={styles.rowTitle}>Export Records</Text>
+                <View style={styles.scopeTag}>
+                  <Text style={styles.scopeTagText}>Custom Date Picker</Text>
+                </View>
+              </View>
               <Text style={styles.rowDesc}>
-                Save complete database to Behav-Backup-YYYY-MM-DD.json
+                {recordBounds.earliestDate
+                  ? `Select specific dates from ${formatFriendlyDate(recordBounds.earliestDate)} onwards`
+                  : 'Choose specific dates or full history (.json / .csv)'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
@@ -218,7 +487,7 @@ export default function SettingsScreen() {
 
           <View style={styles.divider} />
 
-          {/* Unified Import Backup Action */}
+          {/* Import Action */}
           <TouchableOpacity
             style={styles.actionRow}
             onPress={handlePickAndRestore}
@@ -227,75 +496,81 @@ export default function SettingsScreen() {
           >
             <View style={styles.rowIcon}>
               {isReadingFile ? (
-                <ActivityIndicator size="small" color={colors.accentPrimaryDark} />
+                <ActivityIndicator size="small" color={colors.accentPrimary} />
               ) : (
-                <Ionicons name="cloud-download-outline" size={20} color={colors.accentPrimaryDark} />
+                <Ionicons name="cloud-download-outline" size={20} color={colors.accentPrimary} />
               )}
             </View>
             <View style={styles.rowContent}>
               <Text style={styles.rowTitle}>Import Backup</Text>
               <Text style={styles.rowDesc}>
-                Restore from a standard .json backup file
+                Restore habits and historical records from a .json file
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
         </View>
 
+        {/* Last backup info note */}
         <View style={styles.metaRow}>
-          <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+          <Ionicons name="time-outline" size={13} color={colors.textTertiary} />
           <Text style={styles.metaText}>
             {lastBackupTime
               ? `Last exported: ${formatFriendlyDate(lastBackupTime.slice(0, 10))} at ${lastBackupTime.slice(11, 16)}`
-              : 'No backup exported during this session'}
+              : 'No exports created during this session'}
           </Text>
         </View>
       </Card>
 
-
-
-      {/* Section 3: Data Safety Notice */}
-      <Card variant="subtle" style={styles.contentCard}>
-        <View style={styles.noticeHeader}>
-          <Ionicons name="shield-checkmark-outline" size={20} color={colors.accentPrimaryDark} />
-          <Text style={styles.infoTitle}>Data Ownership & Device Safety</Text>
+      {/* SECTION: Small App Information */}
+      <Card variant="subtle" style={styles.infoCard}>
+        <View style={styles.infoHeader}>
+          <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
+          <Text style={styles.infoTitle}>App Information</Text>
         </View>
-        <Text style={styles.infoText}>
-          Behav operates strictly offline. All tracking records are stored exclusively in your device's
-          local SQLite database. There are no remote servers, background analytics, or cloud sync.
-        </Text>
-        <View style={styles.warningCallout}>
-          <Ionicons name="alert-circle-outline" size={18} color={colors.peachText} />
-          <Text style={styles.warningCalloutText}>
-            Important: A backup stored only on this phone will be lost if your device is damaged, lost,
-            or reset. Please use the system share sheet to transfer your exported .json backups to external storage,
-            Google Drive, or your personal computer.
-          </Text>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoKey}>App Version</Text>
+          <Text style={styles.infoVal}>1.0.0</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoKey}>Database</Text>
+          <Text style={styles.infoVal}>SQLite (behav.db)</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoKey}>Storage</Text>
+          <Text style={styles.infoVal}>100% Offline & Private</Text>
         </View>
       </Card>
 
-      {/* Section 4: About Behav */}
-      <Card variant="subtle">
-        <Text style={styles.infoTitle}>About Behav</Text>
-        <View style={styles.specRow}>
-          <Text style={styles.specKey}>Application Version</Text>
-          <Text style={styles.specValue}>1.0.0 (MVP)</Text>
-        </View>
-        <View style={styles.specRow}>
-          <Text style={styles.specKey}>Expo SDK</Text>
-          <Text style={styles.specValue}>58.0.0</Text>
-        </View>
-        <View style={styles.specRow}>
-          <Text style={styles.specKey}>Persistence Engine</Text>
-          <Text style={styles.specValue}>Local SQLite</Text>
-        </View>
-        <View style={styles.specRow}>
-          <Text style={styles.specKey}>Canonical Backup</Text>
-          <Text style={styles.specValue}>Standard JSON (v1)</Text>
-        </View>
-      </Card>
+      {/* Edit Profile Modal */}
+      <EditProfileModal
+        visible={editProfileModalVisible}
+        initialProfile={userProfile}
+        onClose={() => setEditProfileModalVisible(false)}
+        onSave={updateUserProfile}
+      />
 
-      {/* Restore Preview & Confirmation Modal */}
+      {/* Behavior (Habit) Modal: Add & Modify Habit */}
+      <BehaviorModal
+        visible={behaviorModalVisible}
+        behaviorToEdit={selectedBehaviorToEdit}
+        onClose={() => {
+          setBehaviorModalVisible(false);
+          setSelectedBehaviorToEdit(null);
+        }}
+        onSave={handleSaveHabit}
+        onDelete={handleDeleteHabit}
+      />
+
+      {/* Export Date Picker Modal */}
+      <ExportDatePickerModal
+        visible={exportModalVisible}
+        recordBounds={recordBounds}
+        onClose={() => setExportModalVisible(false)}
+        onExport={handleExportConfirmed}
+      />
+
+      {/* Restore Confirmation Modal */}
       <RestoreModal
         visible={restoreModalVisible}
         backup={selectedBackup}
@@ -310,7 +585,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   header: {
     paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.md,
   },
   title: {
     ...typography.titleLarge,
@@ -318,6 +593,7 @@ const styles = StyleSheet.create({
   subtitle: {
     ...typography.bodyMedium,
     marginTop: spacing.xs,
+    color: colors.textSecondary,
   },
   feedbackBanner: {
     flexDirection: 'row',
@@ -343,12 +619,115 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   contentCard: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
+  // Section 1: User Detail styles
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  avatarContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileDetails: {
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  userName: {
+    ...typography.titleMedium,
+    color: colors.textPrimary,
+  },
+  sovereignBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceSubtle,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  greenDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: colors.accentPrimary,
+  },
+  sovereignText: {
+    ...typography.labelSmall,
+    color: colors.accentPrimary,
+    fontSize: 10,
+    textTransform: 'uppercase',
+  },
+  userBio: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    marginTop: 3,
+    lineHeight: 18,
+  },
+  metricsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  metricItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  metricValue: {
+    ...typography.labelLarge,
+    color: colors.textPrimary,
+    fontSize: 15,
+  },
+  metricLabel: {
+    ...typography.labelSmall,
+    color: colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  metricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: colors.borderSubtle,
+  },
+  editProfileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 10,
+    borderRadius: radii.md,
+  },
+  editProfileBtnText: {
+    ...typography.labelMedium,
+    color: colors.accentPrimary,
+  },
+  // Section: Manage Habit styles
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: spacing.md,
   },
   sectionTitle: {
@@ -359,10 +738,124 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-  backupActions: {
+  addHabitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.accentPrimary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.sm,
+  },
+  addHabitBtnText: {
+    ...typography.labelSmall,
+    color: '#101412',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  emptyHabitBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    gap: spacing.xs,
+  },
+  emptyHabitText: {
+    ...typography.labelLarge,
+    color: colors.textSecondary,
+  },
+  emptyHabitSubtext: {
+    ...typography.bodySmall,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  habitList: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: spacing.md,
+  },
+  habitItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+  },
+  habitItemDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  habitLogoCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: `${colors.accentPrimary}15`,
+    borderWidth: 1,
+    borderColor: `${colors.accentPrimary}30`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  habitMetaCol: {
+    flex: 1,
+  },
+  habitNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  habitNameTitle: {
+    ...typography.labelLarge,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  habitCategoryTag: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radii.xs,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  habitCategoryText: {
+    ...typography.labelSmall,
+    color: colors.textTertiary,
+    fontSize: 10,
+  },
+  habitSubtitleText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  habitQuantityText: {
+    ...typography.bodySmall,
+    color: colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  habitEditBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Section: Import/Export styles
+  actionsContainer: {
     backgroundColor: colors.surfaceSubtle,
     borderRadius: radii.md,
     paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
   },
   actionRow: {
     flexDirection: 'row',
@@ -373,7 +866,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: radii.sm,
-    backgroundColor: colors.accentPrimarySubtle,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
@@ -381,14 +876,31 @@ const styles = StyleSheet.create({
   rowContent: {
     flex: 1,
   },
+  rowTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   rowTitle: {
     ...typography.labelLarge,
     fontSize: 14,
+  },
+  scopeTag: {
+    backgroundColor: `${colors.accentPrimary}15`,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radii.xs,
+  },
+  scopeTagText: {
+    ...typography.labelSmall,
+    color: colors.accentPrimary,
+    fontSize: 10,
   },
   rowDesc: {
     ...typography.bodySmall,
     color: colors.textSecondary,
     marginTop: 2,
+    fontSize: 12,
   },
   divider: {
     height: 1,
@@ -397,58 +909,45 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     marginTop: spacing.sm,
-    gap: 6,
   },
   metaText: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
-    fontSize: 12,
+    color: colors.textTertiary,
+    fontSize: 11,
   },
-  noticeHeader: {
+  // Section: App Information styles
+  infoCard: {
+    marginBottom: spacing.xl,
+  },
+  infoHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     marginBottom: spacing.sm,
-    gap: spacing.xs,
   },
   infoTitle: {
-    ...typography.titleSmall,
-    fontSize: 15,
-  },
-  infoText: {
-    ...typography.bodyMedium,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  warningCallout: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.accentActivitySubtle,
-    borderWidth: 1,
-    borderColor: colors.accentActivity,
-    borderRadius: radii.sm,
-    padding: spacing.sm,
-    marginTop: spacing.md,
-    gap: spacing.xs,
-  },
-  warningCalloutText: {
-    ...typography.bodySmall,
-    color: colors.textPrimary,
-    flex: 1,
+    ...typography.labelMedium,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     fontSize: 12,
-    lineHeight: 16,
   },
-  specRow: {
+  infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 3,
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
   },
-  specKey: {
+  infoKey: {
     ...typography.bodySmall,
     color: colors.textSecondary,
   },
-  specValue: {
-    ...typography.labelSmall,
+  infoVal: {
+    ...typography.labelMedium,
     color: colors.textPrimary,
   },
 });

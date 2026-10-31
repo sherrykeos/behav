@@ -20,6 +20,13 @@ import {
 } from '@/db';
 import { toDayString } from '@/utils/date';
 
+export interface UserProfile {
+  name: string;
+  bio: string;
+  avatarIcon: string;
+  avatarColor: string;
+}
+
 interface BehaviorContextValue {
   behaviors: Behavior[];
   archivedBehaviors: Behavior[];
@@ -28,6 +35,9 @@ interface BehaviorContextValue {
   goals: Goal[];
   isLoading: boolean;
   refreshData: () => Promise<void>;
+  // User Profile
+  userProfile: UserProfile;
+  updateUserProfile: (profile: Partial<UserProfile>) => Promise<void>;
   // Behavior operations
   createBehavior: (input: CreateBehaviorInput) => Promise<Behavior>;
   updateBehavior: (id: string, input: UpdateBehaviorInput) => Promise<Behavior>;
@@ -61,11 +71,13 @@ interface BehaviorContextValue {
   }>;
   getMultiHabitWeekData: (anchorDate?: string) => Promise<import('@/db').MultiHabitWeekData>;
   getUnifiedStats: (anchorDate?: string) => Promise<import('@/db').UnifiedStatsData>;
+  // Record bounds & inspection
+  getRecordBounds: () => Promise<import('@/db').RecordBounds>;
   // Backup & Restore operations
-  createBackupData: () => Promise<import('@/db').BehavBackupFile>;
+  createBackupData: (options?: { startDate?: string; endDate?: string }) => Promise<import('@/db').BehavBackupFile>;
   validateBackupContent: (jsonString: string, filename?: string) => { isValid: boolean; error?: string; backup?: import('@/db').BehavBackupFile };
   restoreBackupData: (backup: import('@/db').BehavBackupFile, mode?: 'merge' | 'replace') => Promise<import('@/db').RestoreResult>;
-  exportLogsCsv: () => Promise<string>;
+  exportLogsCsv: (options?: { startDate?: string; endDate?: string }) => Promise<string>;
   exportBehaviorsCsv: () => Promise<string>;
   // Utilities
   getEntriesForDate: (date: string | Date) => Promise<LogEntryWithBehavior[]>;
@@ -84,6 +96,85 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [todayEntries, setTodayEntries] = useState<LogEntryWithBehavior[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // User Profile state
+  const [userProfile, setUserProfile] = useState<UserProfile>({
+    name: 'Sherry',
+    bio: 'Building consistent daily habits',
+    avatarIcon: 'person',
+    avatarColor: '#B9F6CA',
+  });
+
+  // Load user profile from app_settings
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        await db.execAsync(`
+          CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL
+          );
+        `);
+        const rows = await db.getAllAsync<{ key: string; value: string }>(
+          'SELECT key, value FROM app_settings WHERE key IN (?, ?, ?, ?);',
+          ['user_name', 'user_bio', 'user_avatar_icon', 'user_avatar_color']
+        );
+        const map = new Map(rows.map((r) => [r.key, r.value]));
+        setUserProfile((prev) => ({
+          name: map.get('user_name') || prev.name,
+          bio: map.get('user_bio') || prev.bio,
+          avatarIcon: map.get('user_avatar_icon') || prev.avatarIcon,
+          avatarColor: map.get('user_avatar_color') || prev.avatarColor,
+        }));
+      } catch (err) {
+        // quiet fallback
+      }
+    }
+    loadProfile();
+  }, [db]);
+
+  const updateUserProfile = useCallback(
+    async (newProfile: Partial<UserProfile>) => {
+      try {
+        await db.execAsync(`
+          CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL
+          );
+        `);
+        const merged = { ...userProfile, ...newProfile };
+        if (newProfile.name !== undefined) {
+          await db.runAsync('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?);', [
+            'user_name',
+            merged.name,
+          ]);
+        }
+        if (newProfile.bio !== undefined) {
+          await db.runAsync('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?);', [
+            'user_bio',
+            merged.bio,
+          ]);
+        }
+        if (newProfile.avatarIcon !== undefined) {
+          await db.runAsync('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?);', [
+            'user_avatar_icon',
+            merged.avatarIcon,
+          ]);
+        }
+        if (newProfile.avatarColor !== undefined) {
+          await db.runAsync('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?);', [
+            'user_avatar_color',
+            merged.avatarColor,
+          ]);
+        }
+        setUserProfile(merged);
+      } catch (err) {
+        console.error('Error updating user profile:', err);
+        throw err;
+      }
+    },
+    [db, userProfile]
+  );
 
   const refreshData = useCallback(async () => {
     try {
@@ -209,8 +300,12 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return repos.insights.getUnifiedStats(anchorDate);
   }, [repos]);
 
-  const createBackupData = useCallback(async () => {
-    return repos.backup.createBackup();
+  const getRecordBounds = useCallback(async () => {
+    return repos.backup.getRecordBounds();
+  }, [repos]);
+
+  const createBackupData = useCallback(async (options?: { startDate?: string; endDate?: string }) => {
+    return repos.backup.createBackup(options);
   }, [repos]);
 
   const validateBackupContent = useCallback((jsonString: string, filename?: string) => {
@@ -223,8 +318,8 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return result;
   }, [repos, refreshData]);
 
-  const exportLogsCsv = useCallback(async () => {
-    return repos.backup.exportLogsToCsv();
+  const exportLogsCsv = useCallback(async (options?: { startDate?: string; endDate?: string }) => {
+    return repos.backup.exportLogsToCsv(options);
   }, [repos]);
 
   const exportBehaviorsCsv = useCallback(async () => {
@@ -248,6 +343,8 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       goals,
       isLoading,
       refreshData,
+      userProfile,
+      updateUserProfile,
       createBehavior,
       updateBehavior,
       archiveBehavior,
@@ -265,6 +362,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       getHomeDashboardStats,
       getMultiHabitWeekData,
       getUnifiedStats,
+      getRecordBounds,
       createBackupData,
       validateBackupContent,
       restoreBackupData,
@@ -281,6 +379,8 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       goals,
       isLoading,
       refreshData,
+      userProfile,
+      updateUserProfile,
       createBehavior,
       updateBehavior,
       archiveBehavior,
@@ -298,6 +398,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       getHomeDashboardStats,
       getMultiHabitWeekData,
       getUnifiedStats,
+      getRecordBounds,
       createBackupData,
       validateBackupContent,
       restoreBackupData,
