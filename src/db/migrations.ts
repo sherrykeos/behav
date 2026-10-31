@@ -63,6 +63,33 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    name: 'add_icon_and_nickname_to_behaviors',
+    up: async (db: SQLiteDatabase) => {
+      try {
+        await db.execAsync('ALTER TABLE behaviors ADD COLUMN icon TEXT;');
+      } catch {
+        // column may already exist
+      }
+      try {
+        await db.execAsync('ALTER TABLE behaviors ADD COLUMN nickname TEXT;');
+      } catch {
+        // column may already exist
+      }
+    },
+  },
+  {
+    version: 3,
+    name: 'add_subtitle_to_behaviors',
+    up: async (db: SQLiteDatabase) => {
+      try {
+        await db.execAsync('ALTER TABLE behaviors ADD COLUMN subtitle TEXT;');
+      } catch {
+        // column may already exist
+      }
+    },
+  },
 ];
 
 /**

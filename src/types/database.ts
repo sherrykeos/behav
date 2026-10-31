@@ -5,28 +5,37 @@
 export interface Behavior {
   id: string;
   name: string;
+  nickname?: string | null;
+  subtitle?: string | null;
   description: string | null;
   category: string | null;
   unit: string;
   dailyLimit: number | null;
+  icon?: string | null;
   createdAt: string;
   archivedAt: string | null;
 }
 
 export interface CreateBehaviorInput {
   name: string;
+  nickname?: string | null;
+  subtitle?: string | null;
   description?: string | null;
   category?: string | null;
   unit?: string;
   dailyLimit?: number | null;
+  icon?: string | null;
 }
 
 export interface UpdateBehaviorInput {
   name?: string;
+  nickname?: string | null;
+  subtitle?: string | null;
   description?: string | null;
   category?: string | null;
   unit?: string;
   dailyLimit?: number | null;
+  icon?: string | null;
 }
 
 export interface LogEntry {
