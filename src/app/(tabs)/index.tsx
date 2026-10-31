@@ -17,6 +17,7 @@ import { useBehaviors } from '@/context/BehaviorContext';
 import { BehaviorModal } from '@/components/behaviors/BehaviorModal';
 import { QuickLogModal } from '@/components/logging/QuickLogModal';
 import { EditLogModal } from '@/components/logging/EditLogModal';
+import { PastDayModal } from '@/components/logging/PastDayModal';
 import { useRouter } from 'expo-router';
 import { type LogEntryWithBehavior } from '@/types/database';
 import quotesData from '@/data/quotes.json';
@@ -36,7 +37,7 @@ interface DashboardData {
     date: string;
     dayNumber: number;
     dayOfWeek: number;
-    status: 'green' | 'logged' | 'future';
+    status: 'green' | 'logged' | 'future' | 'unknown';
     isToday: boolean;
   }[];
   monthName: string;
@@ -166,9 +167,12 @@ export default function HomeScreen() {
     createLogEntry,
     updateLogEntry,
     deleteLogEntry,
+    setDailyQuantity,
     createBehavior,
     getHomeDashboardStats,
     userProfile,
+    getSummariesForDate,
+    deleteEntriesForDate,
   } = useBehaviors();
 
   const [dashStats, setDashStats] = useState<DashboardData | null>(null);
@@ -176,10 +180,36 @@ export default function HomeScreen() {
   const [selectedBehaviorIdForLog, setSelectedBehaviorIdForLog] = useState<string | null>(null);
   const [createBehaviorVisible, setCreateBehaviorVisible] = useState(false);
   const [entryToEdit, setEntryToEdit] = useState<LogEntryWithBehavior | null>(null);
+  const [pastDayModalVisible, setPastDayModalVisible] = useState(false);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const router = useRouter();
 
   const now = new Date();
   const [calendarDate, setCalendarDate] = useState(() => new Date());
+
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const handleSelectCalendarDate = (dateStr: string) => {
+    if (dateStr > todayStr) return;
+    setSelectedCalendarDate(dateStr);
+    setPastDayModalVisible(true);
+  };
+
+  const handleSavePastDayRecords = async (dateStr: string, quantities: Record<string, number>) => {
+    for (const b of behaviors) {
+      const val = quantities[b.id] ?? 0;
+      await setDailyQuantity(b.id, val, dateStr);
+    }
+    await loadDashboard();
+  };
+
+  const handleClearDayRecords = async (dateStr: string) => {
+    await deleteEntriesForDate(dateStr);
+    await loadDashboard();
+  };
 
   const handlePrevMonth = () => {
     setCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -188,6 +218,18 @@ export default function HomeScreen() {
   const handleNextMonth = () => {
     setCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   };
+
+  const handleResetToCurrentMonth = () => {
+    setCalendarDate(new Date());
+  };
+
+  const isViewingCurrentMonth = useMemo(() => {
+    const today = new Date();
+    return (
+      calendarDate.getFullYear() === today.getFullYear() &&
+      calendarDate.getMonth() === today.getMonth()
+    );
+  }, [calendarDate]);
 
   const daysInMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0).getDate();
   const greenDaysCount = dashStats?.greenDaysMonth ?? 0;
@@ -304,7 +346,7 @@ export default function HomeScreen() {
       dayNumber: number;
       isCurrentMonth: boolean;
       isToday: boolean;
-      status?: 'green' | 'logged' | 'future';
+      status?: 'green' | 'logged' | 'future' | 'unknown';
     }[] = [];
 
     // 1. Previous month trailing overflow days
@@ -323,7 +365,7 @@ export default function HomeScreen() {
     }
 
     // Map of current month day statuses from dashStats
-    const dayStatusMap = new Map<string, 'green' | 'logged' | 'future'>();
+    const dayStatusMap = new Map<string, 'green' | 'logged' | 'future' | 'unknown'>();
     if (dashStats?.monthDays) {
       for (const d of dashStats.monthDays) {
         dayStatusMap.set(d.date, d.status);
@@ -384,7 +426,7 @@ export default function HomeScreen() {
       if (latest.value > 1) {
         await updateLogEntry(latest.id, { value: latest.value - 1 });
       } else {
-        await deleteLogEntry(latest.id);
+        await setDailyQuantity(behaviorId, 0);
       }
       loadDashboard();
     } catch (err) {
@@ -528,21 +570,52 @@ export default function HomeScreen() {
             <View style={[styles.clayCard, styles.calendarCard]}>
               {/* Header: Month Year + navigation buttons */}
               <View style={styles.calendarHeader}>
-                <Text style={styles.calendarTitle}>{monthYearTitle}</Text>
+                <Text style={styles.calendarTitle} numberOfLines={1}>
+                  {monthYearTitle}
+                </Text>
                 <View style={styles.calendarNavButtons}>
+                  
+
                   <TouchableOpacity
                     style={styles.calendarNavButton}
                     onPress={handlePrevMonth}
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Previous month"
                   >
                     <Ionicons name="chevron-back" size={13} color={colors.textSecondary} />
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.calendarTodayPill,
+                      !isViewingCurrentMonth && styles.calendarTodayPillActive,
+                    ]}
+                    onPress={handleResetToCurrentMonth}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    accessibilityLabel="Jump to current day"
+                  >
+                    <Ionicons
+                      name="today-outline"
+                      size={11}
+                      color={!isViewingCurrentMonth ? colors.accentPrimary : colors.textTertiary}
+                    />
+                    {/* <Text
+                      style={[
+                        styles.calendarTodayPillText,
+                        !isViewingCurrentMonth && styles.calendarTodayPillTextActive,
+                      ]}
+                    >
+                      Today
+                    </Text> */}
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={styles.calendarNavButton}
                     onPress={handleNextMonth}
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Next month"
                   >
                     <Ionicons name="chevron-forward" size={13} color={colors.textSecondary} />
                   </TouchableOpacity>
@@ -570,14 +643,38 @@ export default function HomeScreen() {
                     }
                   }
 
+                  const isFutureDate = cell.dateStr > todayStr;
+                  const isSelected =
+                    selectedCalendarDate === cell.dateStr && pastDayModalVisible;
+
                   return (
-                    <View key={cell.key} style={styles.dayCell}>
-                      <View style={[styles.dayNumWrapper, cell.isToday && styles.todayNumWrapper]}>
+                    <TouchableOpacity
+                      key={cell.key}
+                      style={[
+                        styles.dayCell,
+                        isFutureDate && styles.dayCellFuture,
+                        isSelected && styles.dayCellSelected,
+                      ]}
+                      onPress={() => handleSelectCalendarDate(cell.dateStr)}
+                      disabled={isFutureDate}
+                      activeOpacity={0.6}
+                      hitSlop={{ top: 2, bottom: 2, left: 2, right: 2 }}
+                      accessibilityLabel={`Day ${cell.dayNumber}, ${cell.dateStr}, ${cell.status || 'untracked'}`}
+                      accessibilityRole="button"
+                    >
+                      <View
+                        style={[
+                          styles.dayNumWrapper,
+                          cell.isToday && styles.todayNumWrapper,
+                          isSelected && styles.selectedNumWrapper,
+                        ]}
+                      >
                         <Text
                           style={[
                             styles.dayNumText,
                             !cell.isCurrentMonth && styles.otherMonthDayText,
                             cell.isToday && styles.todayDayText,
+                            isSelected && styles.selectedDayText,
                           ]}
                         >
                           {cell.dayNumber}
@@ -590,7 +687,7 @@ export default function HomeScreen() {
                           <View style={styles.dayDotEmpty} />
                         )}
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
@@ -774,6 +871,19 @@ export default function HomeScreen() {
           await deleteLogEntry(id);
           loadDashboard();
         }}
+      />
+
+      <PastDayModal
+        visible={pastDayModalVisible}
+        dateStr={selectedCalendarDate}
+        behaviors={behaviors}
+        onClose={() => {
+          setPastDayModalVisible(false);
+          setSelectedCalendarDate(null);
+        }}
+        onSave={handleSavePastDayRecords}
+        onClearDay={handleClearDayRecords}
+        getSummariesForDate={getSummariesForDate}
       />
     </View>
   );
@@ -1059,6 +1169,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  calendarTodayPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: radii.full,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  calendarTodayPillActive: {
+    backgroundColor: 'rgba(185, 246, 202, 0.12)',
+    borderColor: 'rgba(185, 246, 202, 0.35)',
+  },
+  calendarTodayPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    letterSpacing: -0.2,
+  },
+  calendarTodayPillTextActive: {
+    color: colors.accentPrimary,
+  },
   calendarNavButton: {
     width: 24,
     height: 24,
@@ -1091,6 +1225,13 @@ const styles = StyleSheet.create({
     width: `${100 / 7}%`,
     alignItems: 'center',
     paddingVertical: 2,
+    borderRadius: 8,
+  },
+  dayCellFuture: {
+    opacity: 0.28,
+  },
+  dayCellSelected: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
   },
   dayNumWrapper: {
     width: 22,
@@ -1101,6 +1242,9 @@ const styles = StyleSheet.create({
   },
   todayNumWrapper: {
     backgroundColor: 'rgba(185, 246, 202, 0.15)',
+  },
+  selectedNumWrapper: {
+    backgroundColor: colors.accentPrimary,
   },
   dayNumText: {
     fontSize: 11.5,
@@ -1115,6 +1259,10 @@ const styles = StyleSheet.create({
   todayDayText: {
     color: colors.brand.mint,
     fontWeight: '700',
+  },
+  selectedDayText: {
+    color: colors.textInverse,
+    fontWeight: '800',
   },
   dayDotSlot: {
     height: 6,
