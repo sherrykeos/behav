@@ -11,9 +11,7 @@
   [![React Native](https://img.shields.io/badge/React%20Native-0.88-61DAFB?style=flat-square&logo=react&logoColor=black)](https://reactnative.dev/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.x%20Strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
   [![Storage](https://img.shields.io/badge/Storage-Local%20SQLite%20(Offline)-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://docs.expo.dev/versions/latest/sdk/sqlite/)
-  [![Theme](https://img.shields.io/badge/Theme-Obsidian%20%26%20Electric%20Mint-101412?style=flat-square)](./docs/DESIGN_SYSTEM.md)
-  [![Tests](https://img.shields.io/badge/Tests-33%20Passed%20(8%20Suites)-brightgreen?style=flat-square)](#-automated-testing--verification)
-  [![License](https://img.shields.io/badge/License-Proprietary-red?style=flat-square)](#-proprietary--confidential)
+  
 
   <p align="center">
     <a href="#-installation-android-apk">Installation (APK)</a> •
@@ -27,11 +25,6 @@
   </p>
 
 </div>
-
----
-
-> **PROPRIETARY & CONFIDENTIAL**  
-> This repository contains confidential, proprietary software, design systems, and analytical algorithms for Behav. It is not licensed for public distribution, redistribution, or open-source publication.
 
 ---
 
@@ -268,8 +261,8 @@ Build Configurations:
 ---
 
 
-<br/>
-**Copyright © 2026 Behav. All rights reserved.**
+<div align="center">
+  <p style="font-style:italic; color: #888888; margin-top: 1em;"> Copyright © 2026 Behav. All rights reserved.</p></div>
 
 <div align="center">
   <p style="font-style:italic; color: #888888; margin-top: 1em;">build by sherrykeos</p>
