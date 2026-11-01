@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "type-check": "tsc --noEmit",
-    "test": "tsc src/services/analytics/analyticsEngine.ts src/utils/date.ts --outDir .test-dist --module commonjs --target es2022 --moduleResolution node --skipLibCheck --ignoreConfig --ignoreDeprecations 6.0 && node --test tests/analyticsEngine.test.js tests/databaseCalculations.test.js"
+    "test": "tsc src/services/analytics/analyticsEngine.ts src/utils/date.ts --outDir .test-dist --module commonjs --target es2022 --moduleResolution node --skipLibCheck --ignoreConfig --ignoreDeprecations 6.0 && node --test tests/analyticsEngine.test.js tests/databaseCalculations.test.js tests/onboardingAndSplash.test.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -17,6 +17,7 @@
     "expo-document-picker": "~58.0.4",
     "expo-file-system": "~58.0.11",
     "expo-font": "~58.0.10",
+    "expo-linear-gradient": "~58.0.3",
     "expo-linking": "~58.0.14",
     "expo-router": "~58.0.26",
     "expo-sharing": "~58.0.20",
