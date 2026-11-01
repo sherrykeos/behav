@@ -115,17 +115,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="settings"
+        name="profile"
         options={{
           title: 'profile',
         }}
       />
-      <Tabs.Screen
+      {/* <Tabs.Screen
         name="behaviors"
         options={{
           href: null,
         }}
-      />
+      /> */}
     </Tabs>
   );
 }

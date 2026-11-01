@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenWrapper, Card } from '@/components/common';
+import { useRouter } from 'expo-router';
 import { RestoreModal } from '@/components/settings/RestoreModal';
 import { EditProfileModal } from '@/components/settings/EditProfileModal';
 import { ExportDatePickerModal } from '@/components/settings/ExportDatePickerModal';
@@ -28,6 +29,7 @@ function formatFriendlyMonthYear(dateString: string): string {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const {
     behaviors,
     userProfile,
@@ -41,6 +43,7 @@ export default function SettingsScreen() {
     restoreBackupData,
     getRecordBounds,
     clearAllAppData,
+    resetOnboarding,
   } = useBehaviors();
 
   // Record boundaries (earliest and latest record dates)
@@ -365,14 +368,13 @@ export default function SettingsScreen() {
       {/* SECTION 1: User Profile & Identity Hero Card */}
       <Card style={styles.profileHeroCard}>
         <View style={styles.profileHeader}>
-          {/* Avatar with Halo Glow */}
+          {/* Avatar */}
           <View
             style={[
               styles.avatarContainer,
               {
                 backgroundColor: `${userProfile.avatarColor}1A`,
                 borderColor: userProfile.avatarColor,
-                shadowColor: userProfile.avatarColor,
               },
             ]}
           >
@@ -387,13 +389,13 @@ export default function SettingsScreen() {
           <View style={styles.profileDetails}>
             <View style={styles.nameRow}>
               <Text style={styles.userName}>{userProfile.name}</Text>
-              <View style={styles.sovereignBadge}>
+              {/* <View style={styles.sovereignBadge}>
                 <View style={styles.greenDot} />
                 <Text style={styles.sovereignText}>Private & Offline</Text>
-              </View>
+              </View> */}
             </View>
             <Text style={styles.userBio} numberOfLines={2}>
-              "{userProfile.bio || 'Tracking personal behavior patterns privately.'}"
+              {userProfile.bio || ''}
             </Text>
           </View>
         </View>
@@ -517,42 +519,11 @@ export default function SettingsScreen() {
       <Card style={styles.contentCard}>
         <View style={styles.cardHeader}>
           <View>
-            <Text style={styles.sectionTitle}>Data Sovereignty & Backups</Text>
+            <Text style={styles.sectionTitle}>Data Backups</Text>
             <Text style={styles.sectionSubtitle}>
               Backup and migrate your full database freely
             </Text>
           </View>
-        </View>
-
-        {/* Prominent 1-Tap Instant Backup Card */}
-        <View style={styles.instantBackupCard}>
-          <View style={styles.instantBackupHeader}>
-            <View style={styles.instantBackupIcon}>
-              <Ionicons name="flash" size={18} color="#101412" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.instantBackupTitle}>Instant Full Backup</Text>
-              <Text style={styles.instantBackupDesc}>
-                1-tap export of all habits, logs, and streaks from the beginning to now (.json)
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.instantBackupActionBtn}
-            onPress={handleInstantFullBackup}
-            disabled={isInstantBackingUp}
-            activeOpacity={0.8}
-          >
-            {isInstantBackingUp ? (
-              <ActivityIndicator size="small" color="#101412" />
-            ) : (
-              <Ionicons name="download-outline" size={16} color="#101412" />
-            )}
-            <Text style={styles.instantBackupActionBtnText}>
-              {isInstantBackingUp ? 'Exporting Full Database...' : '⚡ Export Entire App Data'}
-            </Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.actionsContainer}>
@@ -605,7 +576,41 @@ export default function SettingsScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          {/* Instant Full Backup Action */}
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={handleInstantFullBackup}
+            disabled={isInstantBackingUp}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowIcon}>
+              {isInstantBackingUp ? (
+                <ActivityIndicator size="small" color={colors.accentPrimary} />
+              ) : (
+                <Ionicons name="flash-outline" size={20} color={colors.accentPrimary} />
+              )}
+            </View>
+            <View style={styles.rowContent}>
+              <View style={styles.rowTitleRow}>
+                <Text style={styles.rowTitle}>Instant Full Backup</Text>
+                <View style={styles.scopeTag}>
+                  <Text style={styles.scopeTagText}>1-Tap JSON</Text>
+                </View>
+              </View>
+              <Text style={styles.rowDesc}>
+                {isInstantBackingUp
+                  ? 'Exporting full database...'
+                  : 'Export all habits, logs, and streaks from the beginning to now (.json)'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          </TouchableOpacity>
         </View>
+
+
 
         {/* Last backup info note */}
         <View style={styles.metaRow}>
@@ -620,23 +625,19 @@ export default function SettingsScreen() {
 
       {/* SECTION 4: Danger Zone / Clear App Data */}
       <Card style={styles.dangerCard}>
-        <View style={styles.dangerCardHeader}>
+        <View style={styles.dangerRow}>
           <View style={styles.dangerHeaderIcon}>
-            <Ionicons name="alert-circle" size={20} color={colors.danger} />
+            <Ionicons name="trash-outline" size={15} color={colors.danger} />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.dangerCardTitle}>Danger Zone</Text>
-            <Text style={styles.dangerCardSubtitle}>
-              Permanent and irreversible database actions
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.dangerActionRow}>
-          <View style={{ flex: 1, paddingRight: spacing.sm }}>
-            <Text style={styles.dangerActionTitle}>Clear App Data</Text>
+          <View style={styles.dangerTextCol}>
+            <View style={styles.dangerTitleRow}>
+              <Text style={styles.dangerActionTitle}>Clear App Data</Text>
+              <View style={styles.dangerTag}>
+                <Text style={styles.dangerTagText}>Danger</Text>
+              </View>
+            </View>
             <Text style={styles.dangerActionDesc}>
-              Permanently delete all habits, records, and history from this device.
+              Permanently delete all habits and history
             </Text>
           </View>
 
@@ -645,8 +646,7 @@ export default function SettingsScreen() {
             onPress={() => setClearModalVisible(true)}
             activeOpacity={0.8}
           >
-            <Ionicons name="trash-outline" size={15} color="#FFFFFF" />
-            <Text style={styles.clearAppBtnText}>Clear App</Text>
+            <Text style={styles.clearAppBtnText}>Clear</Text>
           </TouchableOpacity>
         </View>
       </Card>
@@ -669,6 +669,21 @@ export default function SettingsScreen() {
           <Text style={styles.infoKey}>Storage Privacy</Text>
           <Text style={styles.infoVal}>100% Offline & Private</Text>
         </View>
+
+        {/* <TouchableOpacity
+          style={styles.replayRow}
+          onPress={async () => {
+            await resetOnboarding();
+            router.push('/onboarding');
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={styles.replayLeft}>
+            <Ionicons name="sparkles-outline" size={15} color={colors.brand.mint} />
+            <Text style={styles.replayText}>Replay Welcome & Onboarding</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </TouchableOpacity> */}
       </Card>
 
       {/* Edit Profile Modal */}
@@ -779,10 +794,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
   },
   profileDetails: {
     flex: 1,
@@ -1007,61 +1018,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   // Section 3: Data Sovereignty & Backups
-  instantBackupCard: {
-    backgroundColor: `${colors.accentPrimary}10`,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: `${colors.accentPrimary}30`,
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  instantBackupHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  instantBackupIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.accentPrimary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  instantBackupTitle: {
-    ...typography.labelLarge,
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  instantBackupDesc: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  instantBackupActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.accentPrimary,
-    paddingVertical: 9,
-    borderRadius: radii.sm,
-    marginTop: 2,
-  },
-  instantBackupActionBtnText: {
-    ...typography.labelMedium,
-    color: '#101412',
-    fontWeight: '700',
-    fontSize: 12,
-  },
   actionsContainer: {
     backgroundColor: colors.surfaceSubtle,
     borderRadius: radii.md,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
@@ -1127,71 +1087,72 @@ const styles = StyleSheet.create({
   },
   // Section 4: Danger Zone styles
   dangerCard: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
     marginBottom: spacing.md,
-    borderColor: `${colors.danger}35`,
-    backgroundColor: '#161313',
+    borderColor: `${colors.danger}30`,
+    backgroundColor: '#151212',
   },
-  dangerCardHeader: {
+  dangerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.md,
   },
   dangerHeaderIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: `${colors.danger}20`,
+    width: 32,
+    height: 32,
+    borderRadius: radii.xs,
+    backgroundColor: `${colors.danger}18`,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dangerCardTitle: {
-    ...typography.titleSmall,
-    color: colors.danger,
-    fontWeight: '700',
+  dangerTextCol: {
+    flex: 1,
   },
-  dangerCardSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textTertiary,
-    fontSize: 12,
-    marginTop: 1,
-  },
-  dangerActionRow: {
+  dangerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: `${colors.danger}25`,
+    gap: 6,
   },
   dangerActionTitle: {
     ...typography.labelLarge,
     color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  dangerTag: {
+    backgroundColor: `${colors.danger}20`,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: radii.xs,
+  },
+  dangerTagText: {
+    ...typography.labelSmall,
+    color: colors.danger,
+    fontSize: 9,
+    fontWeight: '700',
   },
   dangerActionDesc: {
     ...typography.bodySmall,
     color: colors.textSecondary,
     fontSize: 11,
-    lineHeight: 16,
-    marginTop: 2,
+    lineHeight: 14,
+    marginTop: 1,
   },
   clearAppBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
     backgroundColor: colors.danger,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 6,
     borderRadius: radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   clearAppBtnText: {
     ...typography.labelSmall,
     color: '#FFFFFF',
     fontWeight: '700',
-    fontSize: 12,
+    fontSize: 11,
   },
   // Section 5: App Information styles
   infoCard: {
@@ -1225,5 +1186,22 @@ const styles = StyleSheet.create({
   infoVal: {
     ...typography.labelMedium,
     color: colors.textPrimary,
+  },
+  replayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginTop: 6,
+  },
+  replayLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  replayText: {
+    ...typography.labelMedium,
+    color: colors.brand.mint,
+    fontSize: 13,
   },
 });

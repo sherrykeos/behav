@@ -90,20 +90,27 @@ export const ClearDataModal: React.FC<ClearDataModalProps> = ({
           style={styles.keyboardContainer}
         >
           <View style={styles.modalCard}>
+            {/* Top specular reflection line */}
+            <View style={styles.sheenLine} />
+
             {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={styles.headerTitleGroup}>
                 <View style={styles.dangerIconBadge}>
-                  <Ionicons name="warning-outline" size={20} color={colors.danger} />
+                  <Ionicons name="trash" size={16} color={colors.danger} />
                 </View>
-                <Text style={styles.modalTitle}>Clear App Data</Text>
+                <View>
+                  <Text style={styles.modalTitle}>Clear All App Data</Text>
+                  <Text style={styles.modalSubtitle}>Irreversible database reset</Text>
+                </View>
               </View>
               <TouchableOpacity
                 onPress={handleResetModal}
                 style={styles.closeBtn}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.7}
               >
-                <Ionicons name="close" size={20} color={colors.textSecondary} />
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -111,89 +118,90 @@ export const ClearDataModal: React.FC<ClearDataModalProps> = ({
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              bounces={false}
             >
-              {/* Warning Aura Card */}
-              <View style={styles.warningBox}>
-                <Ionicons name="alert-circle" size={32} color={colors.danger} />
-                <View style={styles.warningTextCol}>
-                  <Text style={styles.warningTitle}>Permanent & Irreversible</Text>
-                  <Text style={styles.warningDescription}>
-                    Clearing the app will erase all your habits, daily logged entries, goals,
-                    and streak records from this device.
-                  </Text>
-                </View>
-              </View>
-
-              {/* Data impact summary */}
-              <View style={styles.impactGrid}>
-                <View style={styles.impactCard}>
-                  <Text style={styles.impactValue}>{habitCount}</Text>
-                  <Text style={styles.impactLabel}>Habits</Text>
-                </View>
-                <View style={styles.impactCard}>
-                  <Text style={styles.impactValue}>{recordBounds.recordedDaysCount}</Text>
-                  <Text style={styles.impactLabel}>Days Tracked</Text>
-                </View>
-                <View style={styles.impactCard}>
-                  <Text style={styles.impactValue}>{recordBounds.totalEntries}</Text>
-                  <Text style={styles.impactLabel}>Log Records</Text>
-                </View>
-              </View>
-
-              {/* Strongly Recommended Full Backup Section */}
-              <View style={styles.recommendationCard}>
-                <View style={styles.recommendationHeader}>
-                  <Ionicons name="shield-checkmark" size={18} color={colors.accentPrimary} />
-                  <Text style={styles.recommendationTitle}>Recommended: Create Backup First</Text>
-                </View>
-                <Text style={styles.recommendationBody}>
-                  Save all your records from the beginning to now into a single JSON file.
-                  You can restore your complete progress anytime.
+              {/* Warning & Data Impact Summary */}
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningText}>
+                  All habits, streaks, daily records, and logs will be permanently deleted from this device.
                 </Text>
 
-                {backupSuccess ? (
-                  <View style={styles.backupSuccessBadge}>
-                    <Ionicons name="checkmark-circle" size={18} color={colors.accentPrimary} />
-                    <Text style={styles.backupSuccessText}>
-                      Full backup created & exported safely!
+                <View style={styles.impactStrip}>
+                  <View style={styles.impactCol}>
+                    <Text style={styles.impactNumber}>{habitCount}</Text>
+                    <Text style={styles.impactLabel}>Habits</Text>
+                  </View>
+                  <View style={styles.impactDivider} />
+                  <View style={styles.impactCol}>
+                    <Text style={styles.impactNumber}>{recordBounds.recordedDaysCount}</Text>
+                    <Text style={styles.impactLabel}>Days Tracked</Text>
+                  </View>
+                  <View style={styles.impactDivider} />
+                  <View style={styles.impactCol}>
+                    <Text style={styles.impactNumber}>{recordBounds.totalEntries}</Text>
+                    <Text style={styles.impactLabel}>Log Records</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Safety Net: Backup First CTA Banner */}
+              {backupSuccess ? (
+                <View style={styles.backupSuccessBanner}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.accentPrimary} />
+                  <Text style={styles.backupSuccessText}>
+                    Backup safely exported to device
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.backupPromptBanner}
+                  onPress={handleBackupShortcut}
+                  disabled={isBackingUp}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.backupPromptLeft}>
+                    <Ionicons name="shield-checkmark" size={16} color={colors.accentPrimary} />
+                    <Text style={styles.backupPromptText}>
+                      {isBackingUp ? 'Exporting backup...' : 'Recommended: Save a backup first'}
                     </Text>
                   </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.backupShortcutBtn}
-                    onPress={handleBackupShortcut}
-                    disabled={isBackingUp}
-                    activeOpacity={0.8}
-                  >
-                    {isBackingUp ? (
-                      <ActivityIndicator size="small" color="#101412" />
-                    ) : (
-                      <Ionicons name="flash" size={16} color="#101412" />
-                    )}
-                    <Text style={styles.backupShortcutBtnText}>
-                      {isBackingUp ? 'Exporting All Data...' : '⚡ Backup Entire App Data Now'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+                  {isBackingUp ? (
+                    <ActivityIndicator size="small" color={colors.accentPrimary} />
+                  ) : (
+                    <View style={styles.backupActionTag}>
+                      <Ionicons name="download-outline" size={12} color="#101412" />
+                      <Text style={styles.backupActionTagText}>Backup</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
 
               {/* Error Banner */}
               {error && (
                 <View style={styles.errorBox}>
-                  <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                  <Ionicons name="alert-circle" size={15} color={colors.danger} />
                   <Text style={styles.errorText}>{error}</Text>
                 </View>
               )}
 
-              {/* Type CLEAR verification */}
+              {/* Type CLEAR Authorization */}
               <View style={styles.confirmSection}>
-                <Text style={styles.confirmLabel}>
-                  Type <Text style={styles.boldWord}>CLEAR</Text> to authorize data erasure:
-                </Text>
+                <View style={styles.confirmHeaderRow}>
+                  <Text style={styles.confirmPrompt}>
+                    Type <Text style={styles.clearKeyword}>CLEAR</Text> to authorize:
+                  </Text>
+                  {isConfirmed && (
+                    <View style={styles.confirmedPill}>
+                      <Ionicons name="checkmark" size={11} color={colors.danger} />
+                      <Text style={styles.confirmedPillText}>Confirmed</Text>
+                    </View>
+                  )}
+                </View>
+
                 <TextInput
                   style={[
                     styles.confirmInput,
-                    isConfirmed && styles.confirmInputValid,
+                    isConfirmed && styles.confirmInputConfirmed,
                   ]}
                   value={confirmInput}
                   onChangeText={setConfirmInput}
@@ -202,6 +210,7 @@ export const ClearDataModal: React.FC<ClearDataModalProps> = ({
                   autoCapitalize="characters"
                   autoCorrect={false}
                   editable={!isClearing}
+                  maxLength={10}
                 />
               </View>
 
@@ -228,10 +237,10 @@ export const ClearDataModal: React.FC<ClearDataModalProps> = ({
                   {isClearing ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Ionicons name="trash-outline" size={16} color="#FFFFFF" />
+                    <Ionicons name="trash-outline" size={15} color="#FFFFFF" />
                   )}
                   <Text style={styles.dangerBtnText}>
-                    {isClearing ? 'Erasing...' : 'Erase All Data'}
+                    {isClearing ? 'Erasing Data...' : 'Erase Everything'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -246,216 +255,267 @@ export const ClearDataModal: React.FC<ClearDataModalProps> = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   keyboardContainer: {
     width: '100%',
-    maxWidth: 440,
+    maxWidth: 420,
+    justifyContent: 'center',
   },
   modalCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#181E1B',
     borderRadius: radii.xl,
     borderWidth: 1,
     borderColor: `${colors.danger}40`,
-    maxHeight: '90%',
     overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  sheenLine: {
+    position: 'absolute',
+    top: 0,
+    left: 20,
+    right: 20,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: 14,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSubtle,
   },
   headerTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 10,
   },
   dangerIconBadge: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: `${colors.danger}20`,
+    borderRadius: radii.sm,
+    backgroundColor: `${colors.danger}18`,
+    borderWidth: 1,
+    borderColor: `${colors.danger}35`,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalTitle: {
-    ...typography.titleMedium,
+    ...typography.titleSmall,
     color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    ...typography.bodySmall,
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: colors.surfaceSubtle,
     alignItems: 'center',
     justifyContent: 'center',
   },
   scrollContent: {
-    padding: spacing.lg,
-    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: 12,
+    paddingBottom: 14,
+    gap: 10,
   },
-  warningBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    backgroundColor: `${colors.danger}15`,
+  warningContainer: {
+    backgroundColor: `${colors.danger}0C`,
     borderRadius: radii.md,
-    padding: spacing.md,
+    padding: 11,
     borderWidth: 1,
-    borderColor: `${colors.danger}35`,
+    borderColor: `${colors.danger}25`,
   },
-  warningTextCol: {
-    flex: 1,
-  },
-  warningTitle: {
-    ...typography.labelLarge,
-    color: colors.danger,
-    marginBottom: 4,
-  },
-  warningDescription: {
+  warningText: {
     ...typography.bodySmall,
     color: colors.textSecondary,
-    lineHeight: 18,
+    fontSize: 11.5,
+    lineHeight: 16,
   },
-  impactGrid: {
+  impactStrip: {
     flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  impactCard: {
-    flex: 1,
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radii.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
     alignItems: 'center',
+    backgroundColor: '#131815',
+    borderRadius: radii.sm,
+    marginTop: 9,
+    paddingVertical: 7,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
-  impactValue: {
+  impactCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  impactNumber: {
     ...typography.labelLarge,
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: '700',
     color: colors.textPrimary,
   },
   impactLabel: {
     ...typography.labelSmall,
     color: colors.textTertiary,
-    fontSize: 10,
-    marginTop: 2,
-    textAlign: 'center',
+    fontSize: 9.5,
+    marginTop: 1,
+    letterSpacing: 0.3,
   },
-  recommendationCard: {
-    backgroundColor: `${colors.accentPrimary}10`,
+  impactDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: colors.borderSubtle,
+  },
+  backupPromptBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: `${colors.accentPrimary}0C`,
     borderRadius: radii.md,
-    padding: spacing.md,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
     borderWidth: 1,
-    borderColor: `${colors.accentPrimary}30`,
-    gap: spacing.sm,
+    borderColor: `${colors.accentPrimary}28`,
   },
-  recommendationHeader: {
+  backupPromptLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 7,
+    flex: 1,
+    marginRight: 8,
   },
-  recommendationTitle: {
-    ...typography.labelMedium,
-    color: colors.accentPrimary,
-  },
-  recommendationBody: {
+  backupPromptText: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
+    color: colors.accentPrimary,
+    fontSize: 11.5,
+    fontWeight: '500',
   },
-  backupShortcutBtn: {
+  backupActionTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
+    gap: 4,
     backgroundColor: colors.accentPrimary,
-    paddingVertical: 10,
-    borderRadius: radii.sm,
-    marginTop: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4.5,
+    borderRadius: radii.xs,
   },
-  backupShortcutBtnText: {
-    ...typography.labelMedium,
+  backupActionTagText: {
+    ...typography.labelSmall,
     color: '#101412',
     fontWeight: '700',
+    fontSize: 10.5,
   },
-  backupSuccessBadge: {
+  backupSuccessBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: `${colors.accentPrimary}20`,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: radii.sm,
-    marginTop: 4,
+    gap: 7,
+    backgroundColor: `${colors.accentPrimary}15`,
+    borderRadius: radii.md,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+    borderWidth: 1,
+    borderColor: `${colors.accentPrimary}35`,
   },
   backupSuccessText: {
     ...typography.labelSmall,
     color: colors.accentPrimary,
     fontWeight: '600',
+    fontSize: 11.5,
   },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 6,
     backgroundColor: `${colors.danger}15`,
-    padding: spacing.sm,
+    padding: 8,
     borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: `${colors.danger}35`,
   },
   errorText: {
     ...typography.bodySmall,
     color: colors.danger,
-    fontSize: 12,
+    fontSize: 11,
   },
   confirmSection: {
-    marginTop: spacing.xs,
+    gap: 5,
   },
-  confirmLabel: {
+  confirmHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  confirmPrompt: {
     ...typography.bodySmall,
     color: colors.textSecondary,
-    marginBottom: spacing.xs,
+    fontSize: 11.5,
   },
-  boldWord: {
+  clearKeyword: {
     fontWeight: '700',
     color: colors.danger,
+  },
+  confirmedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: `${colors.danger}18`,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.xs,
+  },
+  confirmedPillText: {
+    ...typography.labelSmall,
+    color: colors.danger,
+    fontSize: 9.5,
+    fontWeight: '700',
   },
   confirmInput: {
     backgroundColor: colors.surfaceSubtle,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    borderRadius: radii.md,
+    borderRadius: radii.sm,
     paddingHorizontal: spacing.md,
-    paddingVertical: 10,
+    paddingVertical: 8,
     ...typography.bodyMedium,
     color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     letterSpacing: 2,
     textAlign: 'center',
+    fontWeight: '600',
   },
-  confirmInputValid: {
+  confirmInputConfirmed: {
     borderColor: colors.danger,
-    backgroundColor: `${colors.danger}10`,
+    backgroundColor: `${colors.danger}12`,
+    color: colors.danger,
   },
   actionsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: 2,
   },
   cancelBtn: {
     flex: 1,
     backgroundColor: colors.surfaceSubtle,
-    borderRadius: radii.md,
-    paddingVertical: 12,
+    borderRadius: radii.sm,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -464,23 +524,27 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     ...typography.labelMedium,
     color: colors.textSecondary,
+    fontSize: 12.5,
+    fontWeight: '600',
   },
   dangerBtn: {
-    flex: 1.2,
+    flex: 1.25,
     backgroundColor: colors.danger,
-    borderRadius: radii.md,
-    paddingVertical: 12,
+    borderRadius: radii.sm,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   dangerBtnDisabled: {
-    opacity: 0.4,
+    opacity: 0.35,
+    backgroundColor: '#351E1E',
   },
   dangerBtnText: {
     ...typography.labelMedium,
     color: '#FFFFFF',
     fontWeight: '700',
+    fontSize: 12.5,
   },
 });

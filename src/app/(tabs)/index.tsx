@@ -27,7 +27,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = Math.min(Math.round(SCREEN_HEIGHT * 0.55), 500);
 
 // Hero background illustration
-const heroImage = require('../../../assets/images/bg/homeBG2.jpg');
+const heroImage = require('../../../assets/images/bg/homeBG4.jpg');
 
 interface DashboardData {
   greenDaysMonth: number;
@@ -918,6 +918,7 @@ const styles = StyleSheet.create({
   heroImage: {
     width: '100%',
     height: '100%',
+    top:30,
   },
   heroOverlay: {
     position: 'absolute',
