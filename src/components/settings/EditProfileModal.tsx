@@ -161,7 +161,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   setName(val);
                   if (error) setError(null);
                 }}
-                placeholder="e.g. Sherry"
+                placeholder="Enter your name"
                 placeholderTextColor={colors.textTertiary}
                 maxLength={30}
               />

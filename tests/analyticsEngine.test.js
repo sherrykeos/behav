@@ -225,7 +225,7 @@ describe('Analytics Engine - Data Quality & Missing Dates', () => {
 });
 
 describe('Analytics Engine - Historical 2026 Dataset Verification (Phase 8)', () => {
-  const artifactPath = 'C:/Users/MRcur/.gemini/antigravity-ide/brain/3b074844-8c46-44be-a218-cde81c07ed4a/.user_uploaded/media_1793422750557.json';
+  const artifactPath = path.join(__dirname, 'fixtures', 'historical2026.json');
 
   it('Verifies mathematical reproducibility of 2026 historical records', () => {
     if (!fs.existsSync(artifactPath)) {

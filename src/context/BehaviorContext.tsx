@@ -111,7 +111,7 @@ export const BehaviorProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // User Profile state
   const [userProfile, setUserProfile] = useState<UserProfile>({
-    name: 'Sherry',
+    name: '',
     bio: 'Building consistent daily habits',
     avatarIcon: 'person',
     avatarColor: '#B9F6CA',

@@ -240,8 +240,8 @@ export default function HomeScreen() {
   const currentStreakProgress = Math.min(1, currentStreakCount / Math.max(1, daysInMonth, maxStreakCount));
   const maxStreakProgress = Math.min(1, maxStreakCount / Math.max(1, daysInMonth, 30));
 
-  // User name dynamically sourced from UserProfile (defaults to Sherry)
-  const userName = userProfile?.name || 'Sherry';
+  // User name dynamically sourced from UserProfile
+  const userName = userProfile?.name?.trim() || '';
 
   // Clock state to update greeting and date dynamically every minute
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -476,8 +476,13 @@ export default function HomeScreen() {
                 <View style={styles.greetingTextGroup}>
                   <View style={styles.greetingTitleRow}>
                     <Text style={styles.greetingTitle} numberOfLines={1}>
-                      {greeting},{' '}
-                      <Text style={styles.greetingUserName}>{userName}</Text>
+                      {greeting}
+                      {userName ? (
+                        <>
+                          {', '}
+                          <Text style={styles.greetingUserName}>{userName}</Text>
+                        </>
+                      ) : null}
                     </Text>
                   </View>
 

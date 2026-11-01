@@ -20,7 +20,7 @@ interface StepNameProps {
 const MAX_NAME_LENGTH = 36;
 
 export const StepName: React.FC<StepNameProps> = ({ initialName, onNext }) => {
-  const [name, setName] = useState<string>(initialName === 'Sherry' ? '' : initialName);
+  const [name, setName] = useState<string>(initialName || '');
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState<boolean>(false);
 

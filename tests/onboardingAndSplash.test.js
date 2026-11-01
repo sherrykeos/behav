@@ -27,7 +27,9 @@ describe('Native Splash Screen & Configuration Verification', () => {
     assert.strictEqual(pluginOptions.dark.image, './assets/appLogo.png');
     assert.strictEqual(pluginOptions.dark.backgroundColor, '#101412');
 
-    // Check Android system bars
+    // Check Android system bars & package config
+    assert.strictEqual(appConfig.expo.android.package, 'com.behav.app');
+    assert.strictEqual(appConfig.expo.android.versionCode, 1);
     assert.strictEqual(appConfig.expo.androidStatusBar.backgroundColor, '#101412');
     assert.strictEqual(appConfig.expo.androidStatusBar.barStyle, 'light-content');
     assert.strictEqual(appConfig.expo.androidNavigationBar.backgroundColor, '#101412');
@@ -69,7 +71,7 @@ describe('Onboarding & Identity Persistence Flow', () => {
         return {
           isOnboardingCompleted: completed === 'true',
           onboardingStep: savedStep,
-          userName: userName || 'Sherry',
+          userName: userName || '',
         };
       }
 
@@ -79,7 +81,7 @@ describe('Onboarding & Identity Persistence Flow', () => {
         return {
           isOnboardingCompleted: true,
           onboardingStep: 4,
-          userName: userName || 'Sherry',
+          userName: userName || '',
         };
       }
 
@@ -148,7 +150,7 @@ describe('Onboarding & Identity Persistence Flow', () => {
 
   it('Scenario 6: Supports Unicode, international names, and trims whitespace', async () => {
     const testCases = [
-      { input: '   Sherry Keos   ', expected: 'Sherry Keos' },
+      { input: '   Alex Taylor   ', expected: 'Alex Taylor' },
       { input: 'José María', expected: 'José María' },
       { input: '李小龙', expected: '李小龙' },
       { input: 'سارة أحمد', expected: 'سارة أحمد' },
@@ -168,7 +170,7 @@ describe('Onboarding & Identity Persistence Flow', () => {
   it('Scenario 7: Navigate backwards without losing the entered name', async () => {
     const db = new MockSQLite();
     let currentStep = 3;
-    let enteredName = 'Sherry';
+    let enteredName = 'Jordan';
 
     // Save progress while on step 3
     await db.saveProgress(currentStep, enteredName);
@@ -180,7 +182,7 @@ describe('Onboarding & Identity Persistence Flow', () => {
     // User returns to step 3
     currentStep = 3;
     const restoredName = await db.getSetting('user_name');
-    assert.strictEqual(restoredName, 'Sherry', 'Entered name must be preserved when navigating back');
+    assert.strictEqual(restoredName, 'Jordan', 'Entered name must be preserved when navigating back');
   });
 
   it('Scenario 8, 9 & 10: Complete onboarding, restart app, onboarding does not appear again', async () => {
@@ -194,12 +196,12 @@ describe('Onboarding & Identity Persistence Flow', () => {
   });
 
   it('Scenario 11: Home greeting uses saved preferred name', async () => {
-    const userProfile = { name: 'Sherry', bio: 'Habits' };
+    const userProfile = { name: 'Jordan', bio: 'Habits' };
     const userName = userProfile.name || 'Friend';
     const hour = 9; // morning
     const greeting = hour < 12 ? 'Good morning' : 'Good evening';
     const greetingText = `${greeting}, ${userName}.`;
-    assert.strictEqual(greetingText, 'Good morning, Sherry.');
+    assert.strictEqual(greetingText, 'Good morning, Jordan.');
   });
 
   it('Scenario 12: Editing preferred name updates the single source of truth', async () => {
@@ -229,7 +231,7 @@ describe('Onboarding & Identity Persistence Flow', () => {
     db.goals.push({ id: 'g1', behaviorId: 'b1', targetValue: 0 });
 
     // Complete onboarding with name
-    await db.completeOnboarding('Sherry');
+    await db.completeOnboarding('Jordan');
 
     // Verify all tracking data is intact
     assert.strictEqual(db.behaviors.length, 1);

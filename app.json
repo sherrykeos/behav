@@ -16,6 +16,8 @@
       "supportsTablet": false
     },
     "android": {
+      "package": "com.behav.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#101412",
         "foregroundImage": "./assets/appLogo.png",

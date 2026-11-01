@@ -388,7 +388,7 @@ export default function SettingsScreen() {
           {/* User Details */}
           <View style={styles.profileDetails}>
             <View style={styles.nameRow}>
-              <Text style={styles.userName}>{userProfile.name}</Text>
+              <Text style={styles.userName}>{userProfile.name || 'Personal Space'}</Text>
               {/* <View style={styles.sovereignBadge}>
                 <View style={styles.greenDot} />
                 <Text style={styles.sovereignText}>Private & Offline</Text>

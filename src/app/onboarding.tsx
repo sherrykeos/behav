@@ -33,7 +33,7 @@ export default function OnboardingScreen() {
 
   const [currentStep, setCurrentStep] = useState<number>(savedStep >= 1 && savedStep <= 4 ? savedStep : 1);
   const [preferredName, setPreferredName] = useState<string>(
-    userProfile.name && userProfile.name !== 'Sherry' ? userProfile.name : ''
+    userProfile?.name?.trim() || ''
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
