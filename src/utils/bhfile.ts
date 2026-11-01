@@ -19,9 +19,18 @@ export interface BHFileV1Day {
 
 export interface BHFileV1HabitSummary {
   total: number;
+  currentStreak?: number;
+  maxStreak?: number;
+}
+
+export interface BHFileV1Period {
+  from: string;
+  to: string;
 }
 
 export interface BHFileV1Summary {
+  startDate?: string | null;
+  endDate?: string | null;
   totalDays: number;
   greenDays: number;
   maxStreak: number;
@@ -31,6 +40,7 @@ export interface BHFileV1Summary {
 export interface BHFileV1 {
   format: 'bhfile';
   version: 1;
+  period?: BHFileV1Period;
   habits: BHFileV1Habit[];
   days: BHFileV1Day[];
   summary: BHFileV1Summary;
@@ -167,15 +177,42 @@ export function calculateBHFileSummary(
     }))
   );
 
+  const startDate = days.length > 0 ? days[0].date : null;
+  const endDate = days.length > 0 ? days[days.length - 1].date : null;
+
   const habitSummaries: Record<string, BHFileV1HabitSummary> = {};
   for (const habit of habits) {
     const sum = days.reduce((acc, d) => acc + (d.habits[habit.id] || 0), 0);
     // Round to avoid IEEE 754 precision artifacts (e.g. 0.1 + 0.2 = 0.30000000000000004)
     const rounded = Math.round(sum * 10000) / 10000;
-    habitSummaries[habit.id] = { total: rounded };
+
+    // Calculate individual habit streaks: clean when quantity === 0
+    const habitDays = days.map((d) => ({
+      date: d.date,
+      isGreen: (d.habits[habit.id] || 0) === 0,
+    }));
+
+    const habitMaxStreak = calculateMaxStreakFromDays(habitDays);
+
+    let habitCurrentStreak = 0;
+    for (let i = habitDays.length - 1; i >= 0; i--) {
+      if (habitDays[i].isGreen) {
+        habitCurrentStreak++;
+      } else {
+        break;
+      }
+    }
+
+    habitSummaries[habit.id] = {
+      total: rounded,
+      currentStreak: habitCurrentStreak,
+      maxStreak: habitMaxStreak,
+    };
   }
 
   return {
+    startDate,
+    endDate,
     totalDays,
     greenDays,
     maxStreak,
@@ -195,14 +232,28 @@ export function validateBHFileV1(
 
   const obj = payload as Record<string, unknown>;
 
-  // Check prohibited root fields
-  const allowedRootKeys = new Set(['format', 'version', 'habits', 'days', 'summary']);
+  // Check prohibited root fields (allows format, version, period, habits, days, summary)
+  const allowedRootKeys = new Set(['format', 'version', 'period', 'habits', 'days', 'summary']);
   for (const key of Object.keys(obj)) {
     if (!allowedRootKeys.has(key)) {
       return {
         isValid: false,
         error: `Prohibited root field detected: "${key}". Canonical BHFile v1 does not allow extraneous metadata.`,
       };
+    }
+  }
+
+  // Validate optional period
+  if (obj.period !== undefined) {
+    if (obj.period === null || typeof obj.period !== 'object' || Array.isArray(obj.period)) {
+      return { isValid: false, error: 'Field "period" must be an object with "from" and "to" date strings.' };
+    }
+    const p = obj.period as Record<string, unknown>;
+    if (typeof p.from !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(p.from)) {
+      return { isValid: false, error: 'Field "period.from" must be a valid YYYY-MM-DD date string.' };
+    }
+    if (typeof p.to !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(p.to)) {
+      return { isValid: false, error: 'Field "period.to" must be a valid YYYY-MM-DD date string.' };
     }
   }
 
@@ -381,93 +432,31 @@ export function validateBHFileV1(
   }
 
   // 5. Summary
-  if (obj.summary === null || typeof obj.summary !== 'object' || Array.isArray(obj.summary)) {
-    return { isValid: false, error: 'Field "summary" must be an object.' };
-  }
-
-  const summaryObj = obj.summary as Record<string, unknown>;
-  const allowedSummaryKeys = new Set(['totalDays', 'greenDays', 'maxStreak', 'habits']);
-  for (const key of Object.keys(summaryObj)) {
-    if (!allowedSummaryKeys.has(key)) {
-      return {
-        isValid: false,
-        error: `Prohibited field "${key}" in summary. Summary contains only totalDays, greenDays, maxStreak, and habits.`,
-      };
+  let summaryObj: Record<string, unknown> = {};
+  if (obj.summary !== undefined && obj.summary !== null) {
+    if (typeof obj.summary !== 'object' || Array.isArray(obj.summary)) {
+      return { isValid: false, error: 'Field "summary" must be an object.' };
     }
+    summaryObj = obj.summary as Record<string, unknown>;
   }
 
-  // Recalculate summary independently to detect tampering or corruption
+  // Recalculate summary authoritatively from habits and days
   const expectedSummary = calculateBHFileSummary(
     obj.habits as BHFileV1Habit[],
     obj.days as BHFileV1Day[]
   );
 
-  if (summaryObj.totalDays !== expectedSummary.totalDays) {
-    return {
-      isValid: false,
-      error: `Summary mismatch: totalDays is ${summaryObj.totalDays}, expected ${expectedSummary.totalDays}.`,
-    };
-  }
-
-  if (summaryObj.greenDays !== expectedSummary.greenDays) {
-    return {
-      isValid: false,
-      error: `Summary mismatch: greenDays is ${summaryObj.greenDays}, expected ${expectedSummary.greenDays}.`,
-    };
-  }
-
-  if (summaryObj.maxStreak !== expectedSummary.maxStreak) {
-    return {
-      isValid: false,
-      error: `Summary mismatch: maxStreak is ${summaryObj.maxStreak}, expected ${expectedSummary.maxStreak}.`,
-    };
-  }
-
-  if (summaryObj.habits === null || typeof summaryObj.habits !== 'object' || Array.isArray(summaryObj.habits)) {
-    return { isValid: false, error: 'summary.habits must be an object.' };
-  }
-
-  const summaryHabits = summaryObj.habits as Record<string, unknown>;
-
-  // Check every defined habit in summary
-  for (const habitId of habitIds) {
-    if (!(habitId in summaryHabits)) {
-      return {
-        isValid: false,
-        error: `summary.habits is missing habit "${habitId}".`,
-      };
-    }
-
-    const hSummary = summaryHabits[habitId] as Record<string, unknown> | null;
-    if (!hSummary || typeof hSummary !== 'object' || typeof hSummary.total !== 'number') {
-      return {
-        isValid: false,
-        error: `summary.habits["${habitId}"].total must be a number.`,
-      };
-    }
-
-    const expectedTotal = expectedSummary.habits[habitId]?.total ?? 0;
-    // Allow epsilon for floating point totals
-    if (Math.abs(hSummary.total - expectedTotal) > 0.0001) {
-      return {
-        isValid: false,
-        error: `Summary mismatch for habit "${habitId}": declared total ${hSummary.total}, calculated total ${expectedTotal}.`,
-      };
-    }
-  }
-
-  // Check for unknown habits in summary
-  for (const habitId of Object.keys(summaryHabits)) {
-    if (!habitIds.has(habitId)) {
-      return {
-        isValid: false,
-        error: `summary.habits contains undefined habit "${habitId}".`,
-      };
-    }
-  }
+  const finalSummary: BHFileV1Summary = {
+    ...expectedSummary,
+    startDate: summaryObj.startDate ? String(summaryObj.startDate) : expectedSummary.startDate,
+    endDate: summaryObj.endDate ? String(summaryObj.endDate) : expectedSummary.endDate,
+  };
 
   return {
     isValid: true,
-    data: obj as unknown as BHFileV1,
+    data: {
+      ...obj,
+      summary: finalSummary,
+    } as unknown as BHFileV1,
   };
 }

@@ -100,6 +100,24 @@ export function hasAcceptedBackupExtension(filename?: string): boolean {
   return lower.endsWith('.json');
 }
 
+export interface RecordBounds {
+  earliestDate: string | null;
+  latestDate: string | null;
+  totalEntries: number;
+  recordedDaysCount: number;
+  recordedDates: string[];
+}
+
+export interface DateCollisionCheckResult {
+  hasCollision: boolean;
+  collidingDates: string[];
+  localRecordedDates: string[];
+  incomingRecordedDates: string[];
+  localPeriod: { from: string | null; to: string | null };
+  incomingPeriod: { from: string | null; to: string | null };
+  recommendationMessage: string;
+}
+
 export class BackupRepository {
   private db: SQLiteDatabase;
 
@@ -108,9 +126,102 @@ export class BackupRepository {
   }
 
   /**
-   * Generates complete canonical BHFile v1 JSON backup payload
+   * Retrieves earliest, latest dates and distinct recorded dates
    */
-  async createBackup(): Promise<BHFileV1> {
+  async getRecordBounds(): Promise<RecordBounds> {
+    const row = await this.db.getFirstAsync<{
+      min_date: string | null;
+      max_date: string | null;
+      total: number;
+    }>(
+      `SELECT 
+         MIN(substr(occurred_at, 1, 10)) as min_date,
+         MAX(substr(occurred_at, 1, 10)) as max_date,
+         COUNT(*) as total
+       FROM log_entries;`
+    );
+
+    const dateRows = await this.db.getAllAsync<{ record_date: string }>(
+      `SELECT DISTINCT substr(occurred_at, 1, 10) as record_date
+       FROM log_entries
+       ORDER BY record_date ASC;`
+    );
+
+    const recordedDates = dateRows.map((r) => r.record_date);
+
+    return {
+      earliestDate: row?.min_date || null,
+      latestDate: row?.max_date || null,
+      totalEntries: Number(row?.total || 0),
+      recordedDaysCount: recordedDates.length,
+      recordedDates,
+    };
+  }
+
+  /**
+   * Validates whether incoming backup dates collide with existing local database records
+   */
+  async checkDateCollision(backup: BHFile): Promise<DateCollisionCheckResult> {
+    const isV1 = !!((backup as any).habits && (backup as any).days);
+
+    // 1. Extract distinct incoming dates
+    const incomingDatesSet = new Set<string>();
+    if (isV1) {
+      const v1 = backup as BHFileV1;
+      for (const day of v1.days) {
+        if (day.date) {
+          incomingDatesSet.add(day.date);
+        }
+      }
+    } else {
+      const legacy = backup as LegacyBHFile;
+      for (const r of legacy.data?.records || []) {
+        const d = (r.occurredAt || '').slice(0, 10);
+        if (d) incomingDatesSet.add(d);
+      }
+    }
+
+    const incomingRecordedDates = Array.from(incomingDatesSet).sort();
+
+    // 2. Query distinct recorded dates in local database
+    const localRows = await this.db.getAllAsync<{ dt: string }>(
+      `SELECT DISTINCT substr(occurred_at, 1, 10) as dt FROM log_entries ORDER BY dt ASC;`
+    );
+    const localRecordedDates = localRows.map((r) => r.dt);
+    const localDatesSet = new Set(localRecordedDates);
+
+    // 3. Find collision intersection
+    const collidingDates = incomingRecordedDates.filter((d) => localDatesSet.has(d));
+    const hasCollision = collidingDates.length > 0;
+
+    const localPeriod = {
+      from: localRecordedDates.length > 0 ? localRecordedDates[0] : null,
+      to: localRecordedDates.length > 0 ? localRecordedDates[localRecordedDates.length - 1] : null,
+    };
+
+    const incomingPeriod = {
+      from: incomingRecordedDates.length > 0 ? incomingRecordedDates[0] : null,
+      to: incomingRecordedDates.length > 0 ? incomingRecordedDates[incomingRecordedDates.length - 1] : null,
+    };
+
+    const recommendationMessage =
+      'Recommendation: Export your current data and merge with your desired data file using any AI (such as ChatGPT, Claude, or Gemini) to resolve date conflicts, then import the resolved file back into Behav.';
+
+    return {
+      hasCollision,
+      collidingDates,
+      localRecordedDates,
+      incomingRecordedDates,
+      localPeriod,
+      incomingPeriod,
+      recommendationMessage,
+    };
+  }
+
+  /**
+   * Generates complete canonical BHFile v1 JSON backup payload, optionally bounded by date
+   */
+  async createBackup(options?: { startDate?: string; endDate?: string }): Promise<BHFileV1> {
     interface RawBehaviorRow {
       id: string;
       name: string;
@@ -125,30 +236,54 @@ export class BackupRepository {
       value: number;
     }
 
+    let logQuery = 'SELECT occurred_at, behavior_id, value FROM log_entries';
+    const params: string[] = [];
+    const conditions: string[] = [];
+
+    if (options?.startDate) {
+      conditions.push('substr(occurred_at, 1, 10) >= ?');
+      params.push(options.startDate);
+    }
+    if (options?.endDate) {
+      conditions.push('substr(occurred_at, 1, 10) <= ?');
+      params.push(options.endDate);
+    }
+
+    if (conditions.length > 0) {
+      logQuery += ' WHERE ' + conditions.join(' AND ');
+    }
+    logQuery += ' ORDER BY occurred_at ASC;';
+
     const [behaviorsRows, logRows] = await Promise.all([
       this.db.getAllAsync<RawBehaviorRow>(
         'SELECT id, name, unit, created_at, archived_at FROM behaviors WHERE archived_at IS NULL ORDER BY created_at ASC;'
       ),
-      this.db.getAllAsync<RawLogRow>(
-        'SELECT occurred_at, behavior_id, value FROM log_entries ORDER BY occurred_at ASC;'
-      ),
+      this.db.getAllAsync<RawLogRow>(logQuery, params),
     ]);
 
-    const habits: BHFileV1Habit[] = behaviorsRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      unit: r.unit,
-    }));
+    // Map long database IDs to short habit IDs (e.g. h1, h2, h3...)
+    const idMapping = new Map<string, string>();
+    const habits: BHFileV1Habit[] = behaviorsRows.map((r, idx) => {
+      const shortId = r.id.length <= 4 && !r.id.includes('-') ? r.id : `h${idx + 1}`;
+      idMapping.set(r.id, shortId);
+      return {
+        id: shortId,
+        name: r.name,
+        unit: r.unit,
+      };
+    });
 
     // Group logs by calendar date (YYYY-MM-DD)
     const dateMap = new Map<string, Record<string, number>>();
     for (const log of logRows) {
+      const shortId = idMapping.get(log.behavior_id);
+      if (!shortId) continue;
       const dateStr = log.occurred_at.slice(0, 10);
       if (!dateMap.has(dateStr)) {
         dateMap.set(dateStr, {});
       }
       const dayTotals = dateMap.get(dateStr)!;
-      dayTotals[log.behavior_id] = (dayTotals[log.behavior_id] || 0) + log.value;
+      dayTotals[shortId] = (dayTotals[shortId] || 0) + log.value;
     }
 
     // Build sorted days array where EVERY habit is present
@@ -166,10 +301,23 @@ export class BackupRepository {
     });
 
     const summary = calculateBHFileSummary(habits, days);
+    if (!summary.startDate && options?.startDate) {
+      summary.startDate = options.startDate;
+    }
+    if (!summary.endDate && options?.endDate) {
+      summary.endDate = options.endDate;
+    }
+
+    const fromDate = summary.startDate || options?.startDate || getCurrentIsoTimestamp().slice(0, 10);
+    const toDate = summary.endDate || options?.endDate || fromDate;
 
     return {
       format: 'bhfile',
       version: 1,
+      period: {
+        from: fromDate,
+        to: toDate,
+      },
       habits,
       days,
       summary,
@@ -212,7 +360,7 @@ export class BackupRepository {
       }
 
       // Canonical BHFile v1 validation
-      if (parsed.habits && parsed.days && parsed.summary) {
+      if (parsed.habits && parsed.days) {
         const v1Result = validateBHFileV1(parsed);
         if (!v1Result.isValid || !v1Result.data) {
           return { isValid: false, error: v1Result.error };
@@ -478,6 +626,18 @@ export class BackupRepository {
    * Restores database records atomically using 'replace' (default full restore) or 'merge'
    */
   async restoreBackup(backup: BHFile, mode: 'merge' | 'replace' = 'replace'): Promise<RestoreResult> {
+    if (mode === 'merge') {
+      const collision = await this.checkDateCollision(backup);
+      if (collision.hasCollision) {
+        const sampleDates = collision.collidingDates.slice(0, 3).join(', ');
+        const suffix = collision.collidingDates.length > 3 ? '...' : '';
+        throw new Error(
+          `Cannot merge due to data collision on ${collision.collidingDates.length} date(s) (${sampleDates}${suffix}). ` +
+          collision.recommendationMessage
+        );
+      }
+    }
+
     const isV1 = !!((backup as any).habits && (backup as any).days);
 
     let restoredBehaviors = 0;
@@ -495,24 +655,68 @@ export class BackupRepository {
 
       if (isV1) {
         const v1 = backup as BHFileV1;
-        // 1. Insert habits into behaviors table
-        for (const h of v1.habits) {
-          await this.db.runAsync(
-            `INSERT OR REPLACE INTO behaviors (id, name, unit, created_at)
-             VALUES (?, ?, ?, ?);`,
-            [h.id, h.name, h.unit, getCurrentIsoTimestamp()]
-          );
-          restoredBehaviors++;
+
+        if (mode === 'replace') {
+          // 1. Insert habits into behaviors table
+          for (const h of v1.habits) {
+            await this.db.runAsync(
+              `INSERT OR REPLACE INTO behaviors (id, name, unit, created_at)
+               VALUES (?, ?, ?, ?);`,
+              [h.id, h.name, h.unit, getCurrentIsoTimestamp()]
+            );
+            restoredBehaviors++;
+          }
+
+          // 2. Insert days into log_entries (preserving all records, including 0-consumption green days)
+          for (const day of v1.days) {
+            const occurredAt = `${day.date}T12:00:00.000`;
+            for (const [habitId, qty] of Object.entries(day.habits)) {
+              const val = typeof qty === 'number' && !isNaN(qty) && qty >= 0 ? qty : 0;
+              await this.db.runAsync(
+                `INSERT INTO log_entries (id, behavior_id, value, occurred_at, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?);`,
+                [generateId(), habitId, val, occurredAt, occurredAt, occurredAt]
+              );
+              restoredLogs++;
+            }
+          }
+          return;
         }
 
-        // 2. Insert days into log_entries
+        // Merge mode: map existing habits by name or ID to prevent duplicates
+        const existingBehaviors = await this.db.getAllAsync<{ id: string; name: string }>(
+          'SELECT id, name FROM behaviors;'
+        );
+        const existingMap = new Map<string, string>();
+        for (const b of existingBehaviors) {
+          existingMap.set(b.name.trim().toLowerCase(), b.id);
+        }
+
+        const habitIdToDbId = new Map<string, string>();
+        for (const h of v1.habits) {
+          const lower = h.name.trim().toLowerCase();
+          if (existingMap.has(lower)) {
+            habitIdToDbId.set(h.id, existingMap.get(lower)!);
+          } else {
+            await this.db.runAsync(
+              `INSERT INTO behaviors (id, name, unit, created_at)
+               VALUES (?, ?, ?, ?);`,
+              [h.id, h.name, h.unit, getCurrentIsoTimestamp()]
+            );
+            habitIdToDbId.set(h.id, h.id);
+            restoredBehaviors++;
+          }
+        }
+
         for (const day of v1.days) {
           const occurredAt = `${day.date}T12:00:00.000`;
           for (const [habitId, qty] of Object.entries(day.habits)) {
+            const val = typeof qty === 'number' && !isNaN(qty) && qty >= 0 ? qty : 0;
+            const targetHabitId = habitIdToDbId.get(habitId) || habitId;
             await this.db.runAsync(
               `INSERT INTO log_entries (id, behavior_id, value, occurred_at, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?);`,
-              [generateId(), habitId, qty, occurredAt, occurredAt, occurredAt]
+              [generateId(), targetHabitId, val, occurredAt, occurredAt, occurredAt]
             );
             restoredLogs++;
           }
@@ -615,7 +819,7 @@ export class BackupRepository {
   /**
    * Generates RFC 4180 compliant CSV string of all activity logs joined with behavior info
    */
-  async exportLogsToCsv(): Promise<string> {
+  async exportLogsToCsv(options?: { startDate?: string; endDate?: string }): Promise<string> {
     interface JoinedLogRow {
       id: string;
       behavior_id: string;
@@ -628,7 +832,7 @@ export class BackupRepository {
       created_at: string;
     }
 
-    const rows = await this.db.getAllAsync<JoinedLogRow>(`
+    let query = `
       SELECT 
         l.id,
         l.behavior_id,
@@ -641,8 +845,25 @@ export class BackupRepository {
         l.created_at
       FROM log_entries l
       JOIN behaviors b ON l.behavior_id = b.id
-      ORDER BY l.occurred_at DESC;
-    `);
+    `;
+    const conditions: string[] = [];
+    const params: string[] = [];
+
+    if (options?.startDate) {
+      conditions.push('substr(l.occurred_at, 1, 10) >= ?');
+      params.push(options.startDate);
+    }
+    if (options?.endDate) {
+      conditions.push('substr(l.occurred_at, 1, 10) <= ?');
+      params.push(options.endDate);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    query += ' ORDER BY l.occurred_at DESC;';
+
+    const rows = await this.db.getAllAsync<JoinedLogRow>(query, params);
 
     const header = [
       'id',
@@ -716,5 +937,16 @@ export class BackupRepository {
     );
 
     return [header, ...lines].join('\r\n');
+  }
+
+  /**
+   * Completely clears all user records, habits, and goals from the database.
+   */
+  async clearAllAppData(): Promise<void> {
+    await this.db.execAsync(`
+      DELETE FROM log_entries;
+      DELETE FROM goals;
+      DELETE FROM behaviors;
+    `);
   }
 }

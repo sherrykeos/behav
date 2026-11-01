@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -6,12 +6,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Badge } from '@/components/common';
 import { colors, radii, shadows, spacing, typography } from '@/theme';
-import type { BHFile, RestoreResult } from '@/db';
-import { formatFriendlyDate } from '@/utils/date';
+import type { BHFile, RestoreResult, DateCollisionCheckResult } from '@/db';
+import { useBehaviors } from '@/context/BehaviorContext';
 
 interface RestoreModalProps {
   visible: boolean;
@@ -28,18 +29,51 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
   onClose,
   onConfirmRestore,
 }) => {
+  const { checkDateCollision } = useBehaviors();
   const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreMode, setRestoreMode] = useState<'replace' | 'merge'>('merge');
   const [result, setResult] = useState<RestoreResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Date collision check state
+  const [isCheckingCollision, setIsCheckingCollision] = useState(false);
+  const [collisionResult, setCollisionResult] = useState<DateCollisionCheckResult | null>(null);
+
+  useEffect(() => {
+    if (visible && backup) {
+      let isMounted = true;
+      setIsCheckingCollision(true);
+      setCollisionResult(null);
+      setError(null);
+
+      checkDateCollision(backup)
+        .then((res) => {
+          if (isMounted) {
+            setCollisionResult(res);
+            setIsCheckingCollision(false);
+          }
+        })
+        .catch((err) => {
+          if (isMounted) {
+            console.error('Error checking date collision:', err);
+            setIsCheckingCollision(false);
+          }
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [visible, backup, checkDateCollision]);
+
   if (!backup) return null;
 
-  const handleRestore = async () => {
+  const handleRestore = async (mode: 'replace' | 'merge') => {
     setIsRestoring(true);
+    setRestoreMode(mode);
     setError(null);
     try {
-      // Default full restore policy is atomic replace-all
-      const res = await onConfirmRestore('replace');
+      const res = await onConfirmRestore(mode);
       setResult(res);
     } catch (err: any) {
       setError(err?.message || 'Failed to restore backup');
@@ -52,14 +86,19 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
     setResult(null);
     setError(null);
     setIsRestoring(false);
+    setCollisionResult(null);
     onClose();
   };
 
-  const isV1 = !!((backup as any).habits && (backup as any).days);
   const behaviorCount = (backup as any).habits?.length ?? (backup as any).data?.behaviors?.length ?? 0;
   const dayCount = (backup as any).days?.length ?? (backup as any).data?.records?.length ?? 0;
   const greenDays = (backup as any).summary?.greenDays;
   const maxStreak = (backup as any).summary?.maxStreak;
+
+  const periodFrom = (backup as any).period?.from || (backup as any).summary?.startDate;
+  const periodTo = (backup as any).period?.to || (backup as any).summary?.endDate;
+
+  const hasCollision = !!collisionResult?.hasCollision;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleModalClose}>
@@ -72,18 +111,24 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
                 <Ionicons name="checkmark-circle" size={48} color={colors.accentPrimaryDark} />
               </View>
 
-              <Text style={styles.title}>Restore Completed</Text>
+              <Text style={styles.title}>
+                {restoreMode === 'merge' ? 'Data Merged Successfully' : 'Restore Completed'}
+              </Text>
               <Text style={styles.subtitle}>
-                Your database and history have been successfully reconstructed from {filename}.
+                {restoreMode === 'merge'
+                  ? `Your records from ${filename} have been placed according to date alongside your existing history.`
+                  : `Your database and history have been successfully reconstructed from ${filename}.`}
               </Text>
 
               <Card variant="subtle" style={styles.summaryCard}>
                 <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Restore Policy</Text>
-                  <Text style={styles.statValue}>Full Replace (Clean State)</Text>
+                  <Text style={styles.statLabel}>Operation Policy</Text>
+                  <Text style={styles.statValue}>
+                    {restoreMode === 'merge' ? 'Merge (Preserved Existing Data)' : 'Full Replace (Clean State)'}
+                  </Text>
                 </View>
                 <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Habits Restored</Text>
+                  <Text style={styles.statLabel}>Habits Unified</Text>
                   <Text style={styles.statValue}>{result.restoredBehaviors}</Text>
                 </View>
                 <View style={styles.statRow}>
@@ -100,11 +145,11 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
               />
             </View>
           ) : (
-            /* Preview & Confirmation View */
+            /* Preview & Collision Check View */
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={styles.header}>
                 <View style={styles.headerTitleRow}>
-                  <Text style={styles.title}>Preview Backup</Text>
+                  <Text style={styles.title}>Import Backup</Text>
                   <Badge label="JSON Backup" variant="lavender" />
                 </View>
                 <TouchableOpacity onPress={handleModalClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -148,20 +193,65 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
                     </>
                   )}
                 </View>
+
+                {periodFrom && periodTo && (
+                  <View style={styles.periodRow}>
+                    <Ionicons name="calendar-outline" size={14} color={colors.accentPrimary} />
+                    <Text style={styles.periodText}>
+                      Period: <Text style={styles.periodDate}>{periodFrom}</Text> to{' '}
+                      <Text style={styles.periodDate}>{periodTo}</Text>
+                    </Text>
+                  </View>
+                )}
               </Card>
 
-              {/* Full Restore Policy Explanation */}
-              <View style={styles.warningBox}>
-                <Ionicons name="alert-circle" size={20} color={colors.peachText} />
-                <View style={styles.warningContent}>
-                  <Text style={styles.warningTitle}>Full Restore Notice</Text>
-                  <Text style={styles.warningText}>
-                    Restoring this backup will replace current local tracking data with the {dayCount} days
-                    and {behaviorCount} habits from this file. Your calendar, daily totals, and statistics will be
-                    recalculated automatically.
+              {/* Collision Check Status */}
+              {isCheckingCollision ? (
+                <View style={styles.checkingBox}>
+                  <ActivityIndicator size="small" color={colors.accentPrimary} />
+                  <Text style={styles.checkingText}>Validating date collisions with local data...</Text>
+                </View>
+              ) : hasCollision ? (
+                /* Collision Alert Box */
+                <View style={styles.collisionBox}>
+                  <View style={styles.collisionHeaderRow}>
+                    <Ionicons name="alert-circle" size={22} color={colors.danger} />
+                    <Text style={styles.collisionTitle}>Data Collision Detected</Text>
+                  </View>
+                  <Text style={styles.collisionDesc}>
+                    Cannot merge due to data collision on{' '}
+                    <Text style={{ fontWeight: '700', color: colors.textPrimary }}>
+                      {collisionResult?.collidingDates.length} date(s)
+                    </Text>{' '}
+                    (e.g.{' '}
+                    {collisionResult?.collidingDates.slice(0, 3).join(', ')}
+                    {collisionResult && collisionResult.collidingDates.length > 3 ? '...' : ''}).
+                    Merging directly would overwrite or duplicate existing records.
+                  </Text>
+
+                  {/* Recommendation Callout */}
+                  <View style={styles.recommendationCallout}>
+                    <View style={styles.recommendationHeader}>
+                      <Ionicons name="sparkles" size={16} color={colors.accentPrimary} />
+                      <Text style={styles.recommendationTitle}>Recommendation</Text>
+                    </View>
+                    <Text style={styles.recommendationText}>
+                      Export your current data first and merge with your desired data file using any AI (such as ChatGPT, Claude, or Gemini) to resolve conflicting dates, then import the unified file back into Behav.
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                /* Safe to Merge Notice */
+                <View style={styles.safeBox}>
+                  <View style={styles.safeHeaderRow}>
+                    <Ionicons name="checkmark-circle" size={20} color={colors.accentPrimary} />
+                    <Text style={styles.safeTitle}>Safe to Merge (No Date Conflicts)</Text>
+                  </View>
+                  <Text style={styles.safeText}>
+                    This file's dates do not overlap with your current data. You can safely merge it and keep both periods placed chronologically without affecting ongoing tracking.
                   </Text>
                 </View>
-              </View>
+              )}
 
               {error && (
                 <View style={styles.errorBox}>
@@ -171,22 +261,46 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({
               )}
 
               {/* Action Buttons */}
-              <View style={styles.actions}>
+              <View style={styles.actionsColumn}>
+                {/* 1. Primary Merge Action */}
                 <Button
-                  label="Cancel"
-                  variant="secondary"
-                  onPress={handleModalClose}
-                  disabled={isRestoring}
-                  style={styles.actionBtn}
+                  label={
+                    isRestoring && restoreMode === 'merge'
+                      ? 'Merging Data...'
+                      : hasCollision
+                      ? 'Cannot Merge (Date Collision)'
+                      : 'Merge & Keep Both Datasets'
+                  }
+                  variant={hasCollision ? 'secondary' : 'primary'}
+                  onPress={() => handleRestore('merge')}
+                  disabled={isRestoring || isCheckingCollision || hasCollision}
+                  loading={isRestoring && restoreMode === 'merge'}
+                  style={{ width: '100%' }}
                 />
-                <Button
-                  label={isRestoring ? 'Restoring...' : 'Replace All & Restore'}
-                  variant="danger"
-                  onPress={handleRestore}
-                  disabled={isRestoring}
-                  loading={isRestoring}
-                  style={styles.actionBtn}
-                />
+
+                {/* 2. Secondary Replace or Cancel options */}
+                <View style={styles.secondaryActionsRow}>
+                  <Button
+                    label="Cancel"
+                    variant="ghost"
+                    onPress={handleModalClose}
+                    disabled={isRestoring}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    label={
+                      isRestoring && restoreMode === 'replace'
+                        ? 'Replacing...'
+                        : 'Replace All (Wipe)'
+                    }
+                    variant="danger"
+                    size="sm"
+                    onPress={() => handleRestore('replace')}
+                    disabled={isRestoring || isCheckingCollision}
+                    loading={isRestoring && restoreMode === 'replace'}
+                    style={{ flex: 1 }}
+                  />
+                </View>
               </View>
             </ScrollView>
           )}
@@ -205,17 +319,19 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   container: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
     width: '100%',
     maxWidth: 440,
-    maxHeight: '90%',
+    backgroundColor: colors.surface,
+    borderRadius: radii.xl,
     padding: spacing.lg,
-    ...shadows.soft,
+    maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.floating,
   },
   content: {
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
   },
   header: {
     flexDirection: 'row',
@@ -230,80 +346,172 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.titleMedium,
-    fontSize: 18,
+    color: colors.textPrimary,
   },
   subtitle: {
     ...typography.bodyMedium,
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.xs,
-    marginBottom: spacing.md,
+    lineHeight: 18,
   },
   filenameText: {
-    ...typography.labelLarge,
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  exportedText: {
     ...typography.bodySmall,
-    color: colors.textSecondary,
+    color: colors.textTertiary,
+    fontFamily: 'monospace',
     marginBottom: spacing.md,
   },
   previewCard: {
-    marginBottom: spacing.md,
     padding: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
   },
   previewSectionTitle: {
     ...typography.labelSmall,
-    color: colors.textSecondary,
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: spacing.sm,
   },
   countsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.xs,
   },
   countItem: {
     alignItems: 'center',
+    flex: 1,
   },
   countNumber: {
-    ...typography.titleLarge,
-    fontSize: 22,
+    ...typography.titleMedium,
     color: colors.textPrimary,
   },
   countLabel: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
+    ...typography.labelSmall,
+    color: colors.textTertiary,
+    fontSize: 10,
     marginTop: 2,
   },
   countDivider: {
     width: 1,
-    height: 32,
+    height: 28,
     backgroundColor: colors.borderSubtle,
   },
-  warningBox: {
+  periodRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.peach,
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingTop: spacing.xs + 2,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    justifyContent: 'center',
+  },
+  periodText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  periodDate: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  checkingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+  },
+  checkingText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+  },
+  collisionBox: {
+    backgroundColor: '#261515',
+    borderWidth: 1,
+    borderColor: '#542020',
     padding: spacing.md,
     borderRadius: radii.md,
     marginBottom: spacing.md,
-    gap: spacing.sm,
   },
-  warningContent: {
-    flex: 1,
+  collisionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    marginBottom: 4,
   },
-  warningTitle: {
+  collisionTitle: {
     ...typography.labelLarge,
-    color: colors.peachText,
-    marginBottom: 2,
-    fontSize: 13,
+    color: '#FF6B6B',
+    fontSize: 14,
   },
-  warningText: {
+  collisionDesc: {
     ...typography.bodySmall,
-    color: colors.peachText,
+    color: '#E0ACAC',
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  recommendationCallout: {
+    marginTop: spacing.sm,
+    backgroundColor: 'rgba(185, 246, 202, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(185, 246, 202, 0.25)',
+    padding: spacing.sm + 2,
+    borderRadius: radii.sm,
+  },
+  recommendationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  recommendationTitle: {
+    ...typography.labelSmall,
+    color: colors.accentPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  recommendationText: {
+    ...typography.bodySmall,
+    color: '#D8F3DC',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  safeBox: {
+    backgroundColor: 'rgba(185, 246, 202, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(185, 246, 202, 0.25)',
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+  },
+  safeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    marginBottom: 4,
+  },
+  safeTitle: {
+    ...typography.labelLarge,
+    color: colors.accentPrimary,
+    fontSize: 14,
+  },
+  safeText: {
+    ...typography.bodySmall,
+    color: '#D8F3DC',
+    fontSize: 12,
+    lineHeight: 17,
   },
   errorBox: {
     flexDirection: 'row',
@@ -320,13 +528,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
+  actionsColumn: {
+    gap: spacing.xs,
+    marginTop: spacing.xs,
   },
-  actionBtn: {
-    flex: 1,
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   successIconContainer: {
     width: 72,
@@ -341,6 +550,8 @@ const styles = StyleSheet.create({
     width: '100%',
     padding: spacing.md,
     marginVertical: spacing.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radii.md,
   },
   statRow: {
     flexDirection: 'row',

@@ -98,10 +98,11 @@ export async function pickAndReadFile(
     }
 
     const asset = result.assets[0];
-    const filename = asset.name || '';
-    const ext = filename.toLowerCase().split('.').pop();
+    const filename = asset.name || 'backup.json';
+    const cleanFilename = filename.split('?')[0].split('#')[0];
+    const ext = cleanFilename.toLowerCase().split('.').pop() || '';
 
-    if (ext !== 'json') {
+    if (ext !== 'json' && !asset.mimeType?.includes('json')) {
       return {
         cancelled: false,
         filename,
@@ -114,14 +115,45 @@ export async function pickAndReadFile(
     if (Platform.OS === 'web') {
       if (asset.file && typeof asset.file.text === 'function') {
         content = await asset.file.text();
+      } else if (asset.file) {
+        content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('FileReader failed to read the file.'));
+          reader.readAsText(asset.file as any);
+        });
       } else {
         const res = await fetch(asset.uri);
         content = await res.text();
       }
     } else {
-      content = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
+      // 1. If on Android with content:// URI, try StorageAccessFramework first
+      if (Platform.OS === 'android' && asset.uri.startsWith('content://')) {
+        try {
+          content = await FileSystem.StorageAccessFramework.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+        } catch {
+          // Fall through to standard FileSystem / fetch fallback
+        }
+      }
+
+      // 2. Standard FileSystem read
+      if (!content) {
+        try {
+          content = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+        } catch (fsErr) {
+          // 3. Fallback: fetch(asset.uri) can resolve Android content:// and file:// streams
+          try {
+            const res = await fetch(asset.uri);
+            content = await res.text();
+          } catch {
+            throw fsErr;
+          }
+        }
+      }
     }
 
     return {

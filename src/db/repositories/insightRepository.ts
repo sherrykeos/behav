@@ -1,6 +1,12 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { toDayString, shiftDayString } from '../../utils/date';
-import { calculateMaxStreakFromDays, calculateMaxStreakWithDates } from '../../utils/bhfile';
+import {
+  computeAnalytics,
+  type HabitDefinition,
+  type DayHabitValues,
+  type PeriodAnalyticsResult,
+  isDayRecordGreen,
+} from '../../services/analytics/analyticsEngine';
 
 export const HABIT_COLORS = [
   '#B9F6CA', // Electric Mint
@@ -39,12 +45,77 @@ export interface HabitDeepDiveStats {
   behaviorUnit: string;
   dailyLimit: number | null;
   createdDate: string;
+  icon?: string | null;
   totalLogged: number;
   logCount: number;
+  totalGreenDays: number;
   currentStreak: number;
   maxStreak: number;
   maxStreakStart: string | null;
   maxStreakEnd: string | null;
+  cleanRate: number;
+}
+
+export interface MonthMatrixHabitBreakdown {
+  habitId: string;
+  habitName: string;
+  shortCode: string;
+  icon: string | null;
+  totalQuantity: number;
+  color: string;
+}
+
+export interface MonthMatrixItem {
+  month: number;
+  monthName: string;
+  year: number;
+  totalRelapses: number;
+  cleanDaysCount: number;
+  recordedDaysCount: number;
+  daysInMonth: number;
+  isAllClean: boolean;
+  habits: MonthMatrixHabitBreakdown[];
+}
+
+export interface YearMatrixData {
+  year: number;
+  availableYears: number[];
+  months: MonthMatrixItem[];
+  yearTotalRelapses: number;
+  yearCleanDays: number;
+}
+
+export interface CustomPeriodStats {
+  fromDate: string;
+  toDate: string;
+  formattedRange: string;
+  selectedHabitIds?: string[];
+  totalCalendarDays: number;
+  recordedDays: number;
+  cleanDays: number;
+  relapseDays: number;
+  cleanRate: number;
+  totalRelapseQuantity: number;
+  habitBreakdown: {
+    id: string;
+    name: string;
+    unit: string;
+    icon: string | null;
+    color: string;
+    totalQuantity: number;
+    cleanDays: number;
+    relapseDays: number;
+    percentage: number;
+  }[];
+  dayOfWeekDistribution: DayOfWeekData[];
+  dailyTimeline: {
+    dateStr: string;
+    dayNumber: number;
+    dayName: string;
+    total: number;
+    isGreen: boolean;
+    isRecorded: boolean;
+  }[];
 }
 
 export interface DayOfWeekData {
@@ -74,6 +145,12 @@ export interface UnifiedStatsData {
   habitDistribution: { id: string; name: string; total: number; percentage: number; color: string }[];
   dayOfWeekDistribution: DayOfWeekData[];
   timeOfDayDistribution: TimeOfDayData;
+  dataQuality?: {
+    expectedDays: number;
+    recordedDays: number;
+    missingDays: number;
+    complete: boolean;
+  };
 }
 
 export interface DayBarData {
@@ -93,13 +170,14 @@ export interface BehaviorStats {
   total7Days: number;
   avg7Days: number;
   prev7DaysTotal: number;
-  trendPercent7Days: number | null; // e.g. -15% (reduced) or +10% (increased)
+  trendPercent7Days: number | null;
   // 30-day stats
   total30Days: number;
   avg30Days: number;
   peakDay: { date: string; value: number } | null;
-  // Current adherence streak
+  // Authoritative streak
   currentStreakDays: number;
+  maxStreakDays: number;
 }
 
 export interface DayTotalRow {
@@ -115,12 +193,77 @@ export class InsightRepository {
   }
 
   /**
-   * Calculates comprehensive bad-habit statistics and honest streaks for a behavior
+   * Loads all active behaviors and daily log records from SQLite
+   * and runs the Authoritative Analytics Engine.
+   */
+  private async loadAuthoritativeDailyData(anchorDate?: string): Promise<{
+    habits: HabitDefinition[];
+    dailyRecords: DayHabitValues[];
+    dateMap: Map<string, Record<string, number>>;
+    analytics: PeriodAnalyticsResult;
+  }> {
+    const habitsRows = await this.db.getAllAsync<{
+      id: string;
+      name: string;
+      unit: string;
+      daily_limit: number | null;
+    }>('SELECT id, name, unit, daily_limit FROM behaviors WHERE archived_at IS NULL ORDER BY created_at ASC;');
+
+    const habits: HabitDefinition[] = habitsRows.map((h) => ({
+      id: h.id,
+      name: h.name,
+      unit: h.unit,
+      dailyLimit: h.daily_limit,
+    }));
+
+    let query = `
+      SELECT
+        behavior_id,
+        substr(occurred_at, 1, 10) as date_str,
+        COALESCE(SUM(value), 0) as total_val
+      FROM log_entries
+    `;
+    const params: string[] = [];
+    if (anchorDate) {
+      query += ' WHERE substr(occurred_at, 1, 10) <= ?';
+      params.push(anchorDate);
+    }
+    query += ' GROUP BY behavior_id, substr(occurred_at, 1, 10) ORDER BY date_str ASC;';
+
+    const rows = await this.db.getAllAsync<{
+      behavior_id: string;
+      date_str: string;
+      total_val: number;
+    }>(query, params);
+
+    const dateMap = new Map<string, Record<string, number>>();
+    for (const r of rows) {
+      if (!dateMap.has(r.date_str)) {
+        dateMap.set(r.date_str, {});
+      }
+      dateMap.get(r.date_str)![r.behavior_id] = Number(r.total_val);
+    }
+
+    const sortedDates = Array.from(dateMap.keys()).sort();
+    const dailyRecords: DayHabitValues[] = sortedDates.map((d) => ({
+      date: d,
+      habits: dateMap.get(d)!,
+    }));
+
+    const analytics = computeAnalytics(habits, dailyRecords, {
+      toDate: anchorDate,
+      referenceDate: anchorDate,
+    });
+
+    return { habits, dailyRecords, dateMap, analytics };
+  }
+
+  /**
+   * Calculates comprehensive habit statistics and streaks using the analytics engine
    */
   async getBehaviorStats(behaviorId: string, anchorDateInput?: string): Promise<BehaviorStats | null> {
     const anchorDate = anchorDateInput || toDayString();
 
-    // 1. Fetch behavior details
     const behavior = await this.db.getFirstAsync<{
       id: string;
       name: string;
@@ -131,32 +274,15 @@ export class InsightRepository {
 
     if (!behavior) return null;
 
-    const createdDay = toDayString(behavior.created_at);
+    const { dateMap, analytics } = await this.loadAuthoritativeDailyData(anchorDate);
 
-    // 2. Fetch past 30 days totals
-    const startDate30 = shiftDayString(anchorDate, -29);
-    const rows = await this.db.getAllAsync<DayTotalRow>(
-      `SELECT
-         substr(occurred_at, 1, 10) AS day,
-         COALESCE(SUM(value), 0) AS total
-       FROM log_entries
-       WHERE behavior_id = ?
-         AND substr(occurred_at, 1, 10) BETWEEN ? AND ?
-       GROUP BY substr(occurred_at, 1, 10);`,
-      [behaviorId, startDate30, anchorDate]
-    );
-
-    const dayMap = new Map<string, number>();
-    for (const row of rows) {
-      dayMap.set(row.day, Number(row.total));
-    }
-
-    // 3. Build 7-day breakdown (last 7 days ending at anchorDate)
+    // 7-day breakdown (last 7 days ending at anchorDate)
     const past7Days: DayBarData[] = [];
     let total7Days = 0;
     for (let i = 6; i >= 0; i--) {
       const dStr = shiftDayString(anchorDate, -i);
-      const total = dayMap.get(dStr) || 0;
+      const dayValues = dateMap.get(dStr);
+      const total = dayValues ? dayValues[behaviorId] || 0 : 0;
       total7Days += total;
 
       const [y, m, d] = dStr.split('-').map(Number);
@@ -173,33 +299,27 @@ export class InsightRepository {
 
     const avg7Days = Math.round((total7Days / 7) * 10) / 10;
 
-    // 4. Calculate previous 7 days (days -13 to -7) to determine trend
-    const prev7Start = shiftDayString(anchorDate, -13);
-    const prev7End = shiftDayString(anchorDate, -7);
-    const prev7Rows = await this.db.getAllAsync<DayTotalRow>(
-      `SELECT
-         COALESCE(SUM(value), 0) AS total
-       FROM log_entries
-       WHERE behavior_id = ?
-         AND substr(occurred_at, 1, 10) BETWEEN ? AND ?;`,
-      [behaviorId, prev7Start, prev7End]
-    );
-    const prev7DaysTotal = prev7Rows.length > 0 ? Number(prev7Rows[0].total) : 0;
+    // Previous 7 days (days -13 to -7)
+    let prev7DaysTotal = 0;
+    for (let i = 13; i >= 7; i--) {
+      const dStr = shiftDayString(anchorDate, -i);
+      const dayValues = dateMap.get(dStr);
+      prev7DaysTotal += dayValues ? dayValues[behaviorId] || 0 : 0;
+    }
 
     let trendPercent7Days: number | null = null;
     if (prev7DaysTotal > 0) {
       trendPercent7Days = Math.round(((total7Days - prev7DaysTotal) / prev7DaysTotal) * 100);
-    } else if (total7Days > 0 && prev7DaysTotal === 0) {
-      trendPercent7Days = null; // No baseline to compare fairly
     }
 
-    // 5. 30-day totals & peak
+    // 30-day totals & peak
     let total30Days = 0;
     let peakDay: { date: string; value: number } | null = null;
 
     for (let i = 29; i >= 0; i--) {
       const dStr = shiftDayString(anchorDate, -i);
-      const val = dayMap.get(dStr) || 0;
+      const dayValues = dateMap.get(dStr);
+      const val = dayValues ? dayValues[behaviorId] || 0 : 0;
       total30Days += val;
       if (val > 0 && (!peakDay || val > peakDay.value)) {
         peakDay = { date: dStr, value: val };
@@ -207,37 +327,10 @@ export class InsightRepository {
     }
     const avg30Days = Math.round((total30Days / 30) * 10) / 10;
 
-    // 6. Calculate Streak based on explicit rule:
-    // For bad habits with a daily limit: consecutive days where total <= daily_limit
-    // Starting from anchorDate backward to createdDay.
-    // If the habit has never had any records logged in the window, streak is 0 (anti-fabrication rule).
-    let currentStreakDays = 0;
-    const limit = behavior.daily_limit;
-
-    if (limit !== null && limit > 0 && rows.length > 0) {
-      // Check anchor day first
-      const todayTotal = dayMap.get(anchorDate) || 0;
-      let checkDate = anchorDate;
-
-      if (todayTotal <= limit) {
-        currentStreakDays++;
-        checkDate = shiftDayString(anchorDate, -1);
-      } else {
-        checkDate = ''; // Exceeded limit on anchor day, streak is 0
-      }
-
-      // Check consecutive prior days back to createdDay
-      while (checkDate && checkDate >= createdDay) {
-        const dayTotal = dayMap.get(checkDate) || 0;
-        if (dayTotal <= limit) {
-          currentStreakDays++;
-          checkDate = shiftDayString(checkDate, -1);
-          if (currentStreakDays >= 60) break;
-        } else {
-          break; // Exceeded limit, streak breaks
-        }
-      }
-    }
+    // Authoritative per-habit streaks from analytics engine
+    const habitAnalytics = analytics.habits[behaviorId];
+    const currentStreakDays = habitAnalytics ? habitAnalytics.currentFreeStreak : 0;
+    const maxStreakDays = habitAnalytics ? habitAnalytics.maxFreeStreak : 0;
 
     return {
       behaviorId: behavior.id,
@@ -253,6 +346,7 @@ export class InsightRepository {
       avg30Days,
       peakDay,
       currentStreakDays,
+      maxStreakDays,
     };
   }
 
@@ -271,11 +365,11 @@ export class InsightRepository {
       'SELECT COUNT(*) as count FROM behaviors WHERE archived_at IS NULL;'
     );
     const todayLogsRow = await this.db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM log_entries WHERE substr(occurred_at, 1, 10) = ?;',
+      'SELECT COUNT(*) as count FROM log_entries WHERE substr(occurred_at, 1, 10) = ? AND value > 0;',
       [anchorDate]
     );
     const weekLogsRow = await this.db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM log_entries WHERE substr(occurred_at, 1, 10) BETWEEN ? AND ?;',
+      'SELECT COUNT(*) as count FROM log_entries WHERE substr(occurred_at, 1, 10) BETWEEN ? AND ? AND value > 0;',
       [startDate7, anchorDate]
     );
 
@@ -288,10 +382,14 @@ export class InsightRepository {
 
   /**
    * Fetches home dashboard metrics:
-   * - sum greenday (current month)
-   * - this streak (current month)
-   * - max streak (all time)
-   * - dot-matrix calendar days for current month
+   * - sum green days (current month, only verified recorded days!)
+   * - this streak (authoritative current green streak)
+   * - max streak (authoritative max green streak all-time)
+   * - calendar day statuses:
+   *   'green': recorded & all habits 0
+   *   'logged': recorded & positive habit activity
+   *   'future': after anchorDate
+   *   'unknown': in the past but no record exists (no dot shown)
    */
   async getHomeDashboardStats(anchorDateInput?: string): Promise<{
     greenDaysMonth: number;
@@ -301,7 +399,7 @@ export class InsightRepository {
       date: string;
       dayNumber: number;
       dayOfWeek: number;
-      status: 'green' | 'logged' | 'future';
+      status: 'green' | 'logged' | 'future' | 'unknown';
       isToday: boolean;
     }[];
     monthName: string;
@@ -316,27 +414,14 @@ export class InsightRepository {
     const firstDayOfWeek = new Date(year, month - 1, 1).getDay();
     const monthName = new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: 'short' });
 
-    // 1. Fetch all days with logged values in this month
-    const monthRows = await this.db.getAllAsync<{ day: string; total_value: number }>(
-      `SELECT
-         substr(occurred_at, 1, 10) AS day,
-         COALESCE(SUM(value), 0) AS total_value
-       FROM log_entries
-       WHERE substr(occurred_at, 1, 7) = ?
-       GROUP BY substr(occurred_at, 1, 10);`,
-      [`${yearStr}-${monthStr}`]
-    );
-
-    const monthDayMap = new Map<string, number>();
-    for (const r of monthRows) {
-      monthDayMap.set(r.day, Number(r.total_value));
-    }
+    const { habits, dateMap, analytics } = await this.loadAuthoritativeDailyData(anchorDate);
+    const trackedHabitIds = habits.map((h) => h.id);
 
     const monthDays: {
       date: string;
       dayNumber: number;
       dayOfWeek: number;
-      status: 'green' | 'logged' | 'future';
+      status: 'green' | 'logged' | 'future' | 'unknown';
       isToday: boolean;
     }[] = [];
 
@@ -347,16 +432,26 @@ export class InsightRepository {
       const dayOfWeek = (firstDayOfWeek + (d - 1)) % 7;
       const isFuture = dateStr > anchorDate;
       const isToday = dateStr === anchorDate;
-      const totalVal = monthDayMap.get(dateStr) || 0;
 
-      let status: 'green' | 'logged' | 'future';
+      let status: 'green' | 'logged' | 'future' | 'unknown';
+
       if (isFuture) {
         status = 'future';
-      } else if (totalVal === 0) {
-        status = 'green';
-        greenDaysMonth++;
+      } else if (dateMap.has(dateStr)) {
+        const dayRecord: DayHabitValues = {
+          date: dateStr,
+          habits: dateMap.get(dateStr)!,
+        };
+        const isGreen = isDayRecordGreen(dayRecord, trackedHabitIds);
+        if (isGreen) {
+          status = 'green';
+          greenDaysMonth++;
+        } else {
+          status = 'logged';
+        }
       } else {
-        status = 'logged';
+        // Day has no valid record: UNKNOWN, not green!
+        status = 'unknown';
       }
 
       monthDays.push({
@@ -368,63 +463,10 @@ export class InsightRepository {
       });
     }
 
-    // 2. Current Month Streak (consecutive green days backward from today)
-    let currentMonthStreak = 0;
-    let checkDate = anchorDate;
-    while (checkDate >= `${yearStr}-${monthStr}-01`) {
-      const total = monthDayMap.get(checkDate) || 0;
-      if (total === 0) {
-        currentMonthStreak++;
-        checkDate = shiftDayString(checkDate, -1);
-      } else {
-        break;
-      }
-    }
-
-    // 3. Max Streak (All Time)
-    const earliestRow = await this.db.getFirstAsync<{ earliest: string }>(
-      'SELECT MIN(substr(occurred_at, 1, 10)) as earliest FROM log_entries;'
-    );
-    const earliestBehRow = await this.db.getFirstAsync<{ earliest: string }>(
-      'SELECT MIN(substr(created_at, 1, 10)) as earliest FROM behaviors;'
-    );
-
-    const earliestDate = earliestRow?.earliest || earliestBehRow?.earliest || `${yearStr}-${monthStr}-01`;
-    const startDate = earliestDate <= anchorDate ? earliestDate : anchorDate;
-
-    const allLogRows = await this.db.getAllAsync<{ day: string; total_value: number }>(
-      `SELECT
-         substr(occurred_at, 1, 10) AS day,
-         COALESCE(SUM(value), 0) AS total_value
-       FROM log_entries
-       WHERE substr(occurred_at, 1, 10) BETWEEN ? AND ?
-       GROUP BY substr(occurred_at, 1, 10);`,
-      [startDate, anchorDate]
-    );
-
-    const allDayMap = new Map<string, number>();
-    for (const r of allLogRows) {
-      allDayMap.set(r.day, Number(r.total_value));
-    }
-
-    const allTimeDailyRecords: { date: string; isGreen: boolean }[] = [];
-    let curDate = startDate;
-    while (curDate <= anchorDate) {
-      const total = allDayMap.get(curDate) || 0;
-      allTimeDailyRecords.push({
-        date: curDate,
-        isGreen: total === 0,
-      });
-      curDate = shiftDayString(curDate, 1);
-      if (allTimeDailyRecords.length > 2000) break;
-    }
-
-    const maxAllTimeStreak = calculateMaxStreakFromDays(allTimeDailyRecords);
-
     return {
       greenDaysMonth,
-      currentMonthStreak,
-      maxAllTimeStreak: Math.max(maxAllTimeStreak, currentMonthStreak),
+      currentMonthStreak: analytics.overview.currentGreenStreak,
+      maxAllTimeStreak: analytics.overview.maxGreenStreak,
       monthDays,
       monthName,
       monthOffset: firstDayOfWeek,
@@ -511,7 +553,8 @@ export class InsightRepository {
   }
 
   /**
-   * Fetches unified comprehensive statistics across all database records
+   * Fetches unified comprehensive statistics across all database records,
+   * authoritatively powered by computeAnalytics.
    */
   async getUnifiedStats(anchorDateInput?: string): Promise<UnifiedStatsData> {
     const anchorDate = anchorDateInput || toDayString();
@@ -521,47 +564,26 @@ export class InsightRepository {
 
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    // 1. Fetch active behaviors
-    const behaviors = await this.db.getAllAsync<{
-      id: string;
-      name: string;
-      unit: string;
-      daily_limit: number | null;
-      created_at: string;
-    }>('SELECT id, name, unit, daily_limit, created_at FROM behaviors WHERE archived_at IS NULL ORDER BY created_at ASC;');
+    const { habits, dateMap, analytics } = await this.loadAuthoritativeDailyData(anchorDate);
+    const trackedHabitIds = habits.map((h) => h.id);
 
-    // 2. Fetch all-time logs
+    // Fetch raw logs for time-of-day and day-of-week distributions
     const allLogs = await this.db.getAllAsync<{
       id: string;
       behavior_id: string;
       occurred_at: string;
       value: number;
-    }>('SELECT id, behavior_id, occurred_at, value FROM log_entries ORDER BY occurred_at ASC;');
+    }>('SELECT id, behavior_id, occurred_at, value FROM log_entries WHERE value > 0 ORDER BY occurred_at ASC;');
 
-    const allDayMap = new Map<string, number>();
-    const behaviorLogsMap = new Map<string, { totalVal: number; count: number; days: Map<string, number>; firstDate: string | null }>();
-
-    for (const b of behaviors) {
-      behaviorLogsMap.set(b.id, { totalVal: 0, count: 0, days: new Map(), firstDate: null });
-    }
-
-    const dayOfWeekCounts = [0, 0, 0, 0, 0, 0, 0]; // Sun=0, Mon=1...
+    const dayOfWeekCounts = [0, 0, 0, 0, 0, 0, 0];
     const timeOfDayCounts = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+    const habitCountsMap = new Map<string, number>();
 
     for (const log of allLogs) {
       const day = log.occurred_at.substring(0, 10);
       const val = Number(log.value);
-      allDayMap.set(day, (allDayMap.get(day) || 0) + val);
 
-      const bStats = behaviorLogsMap.get(log.behavior_id);
-      if (bStats) {
-        bStats.totalVal += val;
-        bStats.count += 1;
-        bStats.days.set(day, (bStats.days.get(day) || 0) + val);
-        if (!bStats.firstDate || day < bStats.firstDate) {
-          bStats.firstDate = day;
-        }
-      }
+      habitCountsMap.set(log.behavior_id, (habitCountsMap.get(log.behavior_id) || 0) + 1);
 
       const [ly, lm, ld] = day.split('-').map(Number);
       const logDate = new Date(ly, lm - 1, ld);
@@ -581,123 +603,80 @@ export class InsightRepository {
       }
     }
 
-    // 3. Current month stats
+    // Green days in current month (verified records only)
     let greenDaysMonth = 0;
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
-      if (dateStr <= anchorDate) {
-        if ((allDayMap.get(dateStr) || 0) === 0) {
+      if (dateStr <= anchorDate && dateMap.has(dateStr)) {
+        const isGreen = isDayRecordGreen({ date: dateStr, habits: dateMap.get(dateStr)! }, trackedHabitIds);
+        if (isGreen) {
           greenDaysMonth++;
         }
       }
     }
 
-    let currentMonthStreak = 0;
-    let checkDate = anchorDate;
-    while (checkDate >= `${yearStr}-${monthStr}-01`) {
-      if ((allDayMap.get(checkDate) || 0) === 0) {
-        currentMonthStreak++;
-        checkDate = shiftDayString(checkDate, -1);
-      } else {
-        break;
-      }
-    }
-
-    // 4. All-time Max Streak & Exact Dates
-    let earliestDate = anchorDate;
-    for (const log of allLogs) {
-      const day = log.occurred_at.substring(0, 10);
-      if (day < earliestDate) earliestDate = day;
-    }
-    for (const b of behaviors) {
-      const day = b.created_at.substring(0, 10);
-      if (day < earliestDate) earliestDate = day;
-    }
-
-    const allDailyRecords: { date: string; isGreen: boolean }[] = [];
-    let cur = earliestDate;
-    while (cur <= anchorDate) {
-      allDailyRecords.push({
-        date: cur,
-        isGreen: (allDayMap.get(cur) || 0) === 0,
-      });
-      cur = shiftDayString(cur, 1);
-      if (allDailyRecords.length > 2500) break;
-    }
-
-    const { maxStreak: calculatedMaxStreak, startDate: maxStreakStart, endDate: maxStreakEnd } =
-      calculateMaxStreakWithDates(allDailyRecords);
-    const maxAllTimeStreak = Math.max(calculatedMaxStreak, currentMonthStreak);
-
-    // 5. Past 30 Days timeline
+    // Past 30 Days timeline
     const past30DaysTotals: { dateStr: string; dayNumber: number; total: number; isGreen: boolean }[] = [];
     for (let i = 29; i >= 0; i--) {
       const dStr = shiftDayString(anchorDate, -i);
-      const total = allDayMap.get(dStr) || 0;
+      const dayRec = dateMap.get(dStr);
+      let total = 0;
+      let isRecorded = false;
+      let isGreen = false;
+
+      if (dayRec) {
+        isRecorded = true;
+        total = Object.values(dayRec).reduce((a, b) => a + b, 0);
+        isGreen = isDayRecordGreen({ date: dStr, habits: dayRec }, trackedHabitIds);
+      }
+
       const dNum = parseInt(dStr.split('-')[2], 10);
       past30DaysTotals.push({
         dateStr: dStr,
         dayNumber: dNum,
         total,
-        isGreen: total === 0,
+        isGreen,
       });
     }
 
-    // 6. Habit Deep Dive Stats
-    const habitStats: HabitDeepDiveStats[] = [];
+    // Habit Deep Dive Stats using Authoritative Engine
+    const behaviors = await this.db.getAllAsync<{
+      id: string;
+      name: string;
+      unit: string;
+      icon: string | null;
+      daily_limit: number | null;
+      created_at: string;
+    }>('SELECT id, name, unit, icon, daily_limit, created_at FROM behaviors WHERE archived_at IS NULL ORDER BY created_at ASC;');
+
     let totalAllHabitsVal = 0;
+    const habitStats: HabitDeepDiveStats[] = behaviors.map((b) => {
+      const hData = analytics.habits[b.id];
+      const totalVol = hData ? hData.totalQuantity : 0;
+      totalAllHabitsVal += totalVol;
 
-    for (const b of behaviors) {
-      const bInfo = behaviorLogsMap.get(b.id) || { totalVal: 0, count: 0, days: new Map(), firstDate: null };
-      totalAllHabitsVal += bInfo.totalVal;
-
-      const createdDay = b.created_at.substring(0, 10);
-      const bDailyRecords: { date: string; isGreen: boolean }[] = [];
-      let bCur = createdDay;
-      while (bCur <= anchorDate) {
-        const dVal = bInfo.days.get(bCur) || 0;
-        bDailyRecords.push({
-          date: bCur,
-          isGreen: b.daily_limit !== null ? dVal <= b.daily_limit : dVal === 0,
-        });
-        bCur = shiftDayString(bCur, 1);
-        if (bDailyRecords.length > 2500) break;
-      }
-
-      const { maxStreak: bMax, startDate: bStart, endDate: bEnd } = calculateMaxStreakWithDates(bDailyRecords);
-
-      let bCurStreak = 0;
-      let bCheck = anchorDate;
-      while (bCheck >= createdDay) {
-        const dVal = bInfo.days.get(bCheck) || 0;
-        const isClean = b.daily_limit !== null ? dVal <= b.daily_limit : dVal === 0;
-        if (isClean) {
-          bCurStreak++;
-          bCheck = shiftDayString(bCheck, -1);
-        } else {
-          break;
-        }
-      }
-
-      habitStats.push({
+      return {
         behaviorId: b.id,
         behaviorName: b.name,
         behaviorUnit: b.unit,
         dailyLimit: b.daily_limit,
         createdDate: b.created_at.substring(0, 10),
-        totalLogged: bInfo.totalVal,
-        logCount: bInfo.count,
-        currentStreak: bCurStreak,
-        maxStreak: bMax,
-        maxStreakStart: bStart,
-        maxStreakEnd: bEnd,
-      });
-    }
+        icon: b.icon || null,
+        totalLogged: totalVol,
+        logCount: habitCountsMap.get(b.id) || 0,
+        totalGreenDays: hData ? hData.zeroDays : 0,
+        currentStreak: hData ? hData.currentFreeStreak : 0,
+        maxStreak: hData ? hData.maxFreeStreak : 0,
+        maxStreakStart: hData ? hData.maxFreeStreakStart : null,
+        maxStreakEnd: hData ? hData.maxFreeStreakEnd : null,
+        cleanRate: hData && hData.recordedDays > 0 ? Math.round((hData.zeroDays / hData.recordedDays) * 100) : 0,
+      };
+    });
 
-    // 7. Habit Distribution
+    // Habit Distribution Proportions
     const habitDistribution = behaviors.map((b, idx) => {
-      const bInfo = behaviorLogsMap.get(b.id);
-      const total = bInfo?.totalVal || 0;
+      const hData = analytics.habits[b.id];
+      const total = hData ? hData.totalQuantity : 0;
       const pct = totalAllHabitsVal > 0 ? Math.round((total / totalAllHabitsVal) * 100) : 0;
       return {
         id: b.id,
@@ -708,7 +687,6 @@ export class InsightRepository {
       };
     });
 
-    // 8. Day of Week distribution (Mon through Sun)
     const dayOfWeekNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const dayOfWeekIndices = [1, 2, 3, 4, 5, 6, 0];
     const dayOfWeekDistribution: DayOfWeekData[] = dayOfWeekIndices.map((idx, displayIdx) => ({
@@ -720,10 +698,10 @@ export class InsightRepository {
     return {
       greenDaysMonth,
       daysInMonth,
-      currentMonthStreak,
-      maxAllTimeStreak,
-      maxStreakStart,
-      maxStreakEnd,
+      currentMonthStreak: analytics.overview.currentGreenStreak,
+      maxAllTimeStreak: analytics.overview.maxGreenStreak,
+      maxStreakStart: analytics.overview.maxGreenStreakStart,
+      maxStreakEnd: analytics.overview.maxGreenStreakEnd,
       totalLogsRecorded: allLogs.length,
       totalHabitsActive: behaviors.length,
       habitStats,
@@ -731,6 +709,345 @@ export class InsightRepository {
       habitDistribution,
       dayOfWeekDistribution,
       timeOfDayDistribution: timeOfDayCounts,
+      dataQuality: {
+        expectedDays: analytics.dataQuality.expectedDays,
+        recordedDays: analytics.dataQuality.recordedDays,
+        missingDays: analytics.dataQuality.missingDays,
+        complete: analytics.dataQuality.complete,
+      },
+    };
+  }
+
+  /**
+   * Retrieves all distinct years containing log entries, plus current year
+   */
+  async getAvailableYears(): Promise<number[]> {
+    const currentYear = new Date().getFullYear();
+    const rows = await this.db.getAllAsync<{ yr: string }>(
+      `SELECT DISTINCT substr(occurred_at, 1, 4) AS yr
+       FROM log_entries
+       WHERE substr(occurred_at, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+       ORDER BY yr DESC;`
+    );
+
+    const yearSet = new Set<number>();
+    for (const r of rows) {
+      const parsed = parseInt(r.yr, 10);
+      if (!isNaN(parsed) && parsed >= 2000 && parsed <= 2100) {
+        yearSet.add(parsed);
+      }
+    }
+    yearSet.add(currentYear);
+
+    return Array.from(yearSet).sort((a, b) => b - a);
+  }
+
+  /**
+   * Builds the 4x3 12-month calendar matrix of bad habits for the given year
+   */
+  async getYearMatrixData(targetYearInput?: number): Promise<YearMatrixData> {
+    const availableYears = await this.getAvailableYears();
+    const currentYear = new Date().getFullYear();
+    const year =
+      targetYearInput && availableYears.includes(targetYearInput)
+        ? targetYearInput
+        : availableYears[0] || currentYear;
+
+    const habitsRows = await this.db.getAllAsync<{ id: string; name: string; unit: string; icon: string | null }>(
+      'SELECT id, name, unit, icon FROM behaviors WHERE archived_at IS NULL ORDER BY created_at ASC;'
+    );
+
+    const habitColorMap = new Map<string, string>();
+    habitsRows.forEach((h, i) => {
+      habitColorMap.set(h.id, HABIT_COLORS[i % HABIT_COLORS.length]);
+    });
+
+    const yearPrefix = `${year}-%`;
+    const logs = await this.db.getAllAsync<{
+      behavior_id: string;
+      day: string;
+      total: number;
+    }>(
+      `SELECT
+         behavior_id,
+         substr(occurred_at, 1, 10) as day,
+         COALESCE(SUM(value), 0) as total
+       FROM log_entries
+       WHERE substr(occurred_at, 1, 10) LIKE ?
+       GROUP BY behavior_id, substr(occurred_at, 1, 10);`,
+      [yearPrefix]
+    );
+
+    // Group logs by month number (1 to 12)
+    const monthLogsMap = new Map<number, { day: string; behaviorId: string; total: number }[]>();
+    for (let m = 1; m <= 12; m++) {
+      monthLogsMap.set(m, []);
+    }
+
+    for (const log of logs) {
+      const monthNum = parseInt(log.day.substring(5, 7), 10);
+      if (monthLogsMap.has(monthNum)) {
+        monthLogsMap.get(monthNum)!.push({
+          day: log.day,
+          behaviorId: log.behavior_id,
+          total: Number(log.total),
+        });
+      }
+    }
+
+    const monthNames = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+
+    let yearTotalRelapses = 0;
+    let yearCleanDays = 0;
+
+    const months: MonthMatrixItem[] = [];
+
+    for (let m = 1; m <= 12; m++) {
+      const daysInM = new Date(year, m, 0).getDate();
+      const monthLogs = monthLogsMap.get(m) || [];
+
+      // Group by day to compute clean days
+      const daysWithRecords = new Map<string, { total: number }>();
+      const habitTotalsInMonth = new Map<string, number>();
+
+      for (const item of monthLogs) {
+        habitTotalsInMonth.set(
+          item.behaviorId,
+          (habitTotalsInMonth.get(item.behaviorId) || 0) + item.total
+        );
+        const curDay = daysWithRecords.get(item.day) || { total: 0 };
+        curDay.total += item.total;
+        daysWithRecords.set(item.day, curDay);
+      }
+
+      let monthTotalRelapses = 0;
+      let monthCleanDays = 0;
+
+      for (const [_, dayData] of daysWithRecords.entries()) {
+        if (dayData.total === 0) {
+          monthCleanDays++;
+        }
+      }
+
+      const habitBreakdown: MonthMatrixHabitBreakdown[] = [];
+      for (const h of habitsRows) {
+        const hTotal = habitTotalsInMonth.get(h.id) || 0;
+        monthTotalRelapses += hTotal;
+        if (hTotal > 0) {
+          habitBreakdown.push({
+            habitId: h.id,
+            habitName: h.name,
+            shortCode: this.getHabitShortCode(h.name),
+            icon: h.icon,
+            totalQuantity: hTotal,
+            color: habitColorMap.get(h.id) || HABIT_COLORS[0],
+          });
+        }
+      }
+
+      yearTotalRelapses += monthTotalRelapses;
+      yearCleanDays += monthCleanDays;
+
+      months.push({
+        month: m,
+        monthName: monthNames[m - 1],
+        year,
+        totalRelapses: monthTotalRelapses,
+        cleanDaysCount: monthCleanDays,
+        recordedDaysCount: daysWithRecords.size,
+        daysInMonth: daysInM,
+        isAllClean: monthTotalRelapses === 0 && monthCleanDays > 0,
+        habits: habitBreakdown,
+      });
+    }
+
+    return {
+      year,
+      availableYears,
+      months,
+      yearTotalRelapses,
+      yearCleanDays,
+    };
+  }
+
+  /**
+   * Helper to derive concise short code for bad habits (e.g. F for Fap, S for Smoke)
+   */
+  private getHabitShortCode(name: string): string {
+    const lower = name.toLowerCase().trim();
+    if (lower.includes('smoke') || lower.includes('cigar') || lower.includes('vape')) return 'S';
+    if (lower.includes('fap') || lower.includes('porn') || lower.includes('masturbat') || lower.includes('nofap')) return 'F';
+    if (lower.includes('alcohol') || lower.includes('beer') || lower.includes('wine') || lower.includes('drink')) return 'A';
+    if (lower.includes('coffee') || lower.includes('caffeine')) return 'C';
+    if (lower.includes('game') || lower.includes('gaming')) return 'G';
+    if (lower.includes('food') || lower.includes('junk') || lower.includes('sugar')) return 'J';
+    if (lower.includes('phone') || lower.includes('screen') || lower.includes('social') || lower.includes('scroll')) return 'P';
+    if (lower.includes('weed') || lower.includes('cannabis')) return 'W';
+    return name.trim().charAt(0).toUpperCase();
+  }
+
+  /**
+   * Computes custom date period statistics with full breakdown and day of week patterns
+   */
+  async getCustomPeriodStats(
+    fromDateInput: string,
+    toDateInput: string,
+    filterHabitIds?: string[]
+  ): Promise<CustomPeriodStats> {
+    const fromDate = fromDateInput <= toDateInput ? fromDateInput : toDateInput;
+    const toDate = fromDateInput <= toDateInput ? toDateInput : fromDateInput;
+
+    const { habits: allHabits, dateMap } = await this.loadAuthoritativeDailyData(toDate);
+    const hasFilter = Array.isArray(filterHabitIds) && filterHabitIds.length > 0;
+    const habits = hasFilter
+      ? allHabits.filter((h) => filterHabitIds.includes(h.id))
+      : allHabits;
+
+    const trackedHabitIds = habits.map((h) => h.id);
+    const trackedHabitSet = new Set(trackedHabitIds);
+
+    const habitColorMap = new Map<string, string>();
+    habits.forEach((h, i) => {
+      habitColorMap.set(h.id, HABIT_COLORS[i % HABIT_COLORS.length]);
+    });
+
+    const [fy, fm, fd] = fromDate.split('-').map(Number);
+    const [ty, tm, td] = toDate.split('-').map(Number);
+    const fromUtc = Date.UTC(fy, fm - 1, fd);
+    const toUtc = Date.UTC(ty, tm - 1, td);
+    const totalCalendarDays = Math.round((toUtc - fromUtc) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Get logs in this range
+    const logs = await this.db.getAllAsync<{
+      behavior_id: string;
+      day: string;
+      value: number;
+    }>(
+      `SELECT
+         behavior_id,
+         substr(occurred_at, 1, 10) as day,
+         COALESCE(SUM(value), 0) as value
+       FROM log_entries
+       WHERE substr(occurred_at, 1, 10) BETWEEN ? AND ?
+       GROUP BY behavior_id, substr(occurred_at, 1, 10);`,
+      [fromDate, toDate]
+    );
+
+    const habitTotals = new Map<string, number>();
+    const habitRelapseDays = new Map<string, number>();
+    const dayTotals = new Map<string, number>();
+    const dayOfWeekCounts = [0, 0, 0, 0, 0, 0, 0];
+
+    for (const log of logs) {
+      if (!trackedHabitSet.has(log.behavior_id)) {
+        continue;
+      }
+      const val = Number(log.value);
+      habitTotals.set(log.behavior_id, (habitTotals.get(log.behavior_id) || 0) + val);
+      if (val > 0) {
+        habitRelapseDays.set(log.behavior_id, (habitRelapseDays.get(log.behavior_id) || 0) + 1);
+      }
+      dayTotals.set(log.day, (dayTotals.get(log.day) || 0) + val);
+
+      const [ly, lm, ld] = log.day.split('-').map(Number);
+      const dow = new Date(ly, lm - 1, ld).getDay();
+      dayOfWeekCounts[dow] += val;
+    }
+
+    let cleanDays = 0;
+    let relapseDays = 0;
+    let recordedDays = 0;
+    let totalRelapseQuantity = 0;
+
+    const dailyTimeline: CustomPeriodStats['dailyTimeline'] = [];
+    const dayOfWeekNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    let curDate = fromDate;
+    while (curDate <= toDate) {
+      const [cy, cm, cd] = curDate.split('-').map(Number);
+      const cDateObj = new Date(cy, cm - 1, cd);
+      const dayName = dayOfWeekNamesShort[cDateObj.getDay()];
+
+      const dayRec = dateMap.get(curDate);
+      const isRecorded = dayRec !== undefined;
+      const total = dayTotals.get(curDate) || 0;
+      totalRelapseQuantity += total;
+
+      let isGreen = false;
+      if (isRecorded) {
+        recordedDays++;
+        isGreen = isDayRecordGreen({ date: curDate, habits: dayRec }, trackedHabitIds);
+        if (isGreen) {
+          cleanDays++;
+        } else {
+          relapseDays++;
+        }
+      }
+
+      dailyTimeline.push({
+        dateStr: curDate,
+        dayNumber: cd,
+        dayName,
+        total,
+        isGreen,
+        isRecorded,
+      });
+
+      curDate = shiftDayString(curDate, 1);
+    }
+
+    const cleanRate = recordedDays > 0 ? Math.round((cleanDays / recordedDays) * 100) : 0;
+
+    const habitBreakdown = habits.map((h) => {
+      const tot = habitTotals.get(h.id) || 0;
+      const rDays = habitRelapseDays.get(h.id) || 0;
+      const cDays = Math.max(0, recordedDays - rDays);
+      const pct = totalRelapseQuantity > 0 ? Math.round((tot / totalRelapseQuantity) * 100) : 0;
+
+      return {
+        id: h.id,
+        name: h.name,
+        unit: (h as any).unit || 'times',
+        icon: (h as any).icon || null,
+        color: habitColorMap.get(h.id) || HABIT_COLORS[0],
+        totalQuantity: tot,
+        cleanDays: cDays,
+        relapseDays: rDays,
+        percentage: pct,
+      };
+    });
+
+    const dayOfWeekNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayOfWeekIndices = [1, 2, 3, 4, 5, 6, 0];
+    const dayOfWeekDistribution: DayOfWeekData[] = dayOfWeekIndices.map((idx, displayIdx) => ({
+      dayIndex: idx,
+      dayName: dayOfWeekNames[displayIdx],
+      total: dayOfWeekCounts[idx],
+    }));
+
+    const [sy, sm, sd] = fromDate.split('-').map(Number);
+    const [ey, em, ed] = toDate.split('-').map(Number);
+    const startObj = new Date(sy, sm - 1, sd);
+    const endObj = new Date(ey, em - 1, ed);
+    const formattedRange = `${startObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} – ${endObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+    return {
+      fromDate,
+      toDate,
+      formattedRange,
+      selectedHabitIds: filterHabitIds,
+      totalCalendarDays,
+      recordedDays,
+      cleanDays,
+      relapseDays,
+      cleanRate,
+      totalRelapseQuantity,
+      habitBreakdown,
+      dayOfWeekDistribution,
+      dailyTimeline,
     };
   }
 }

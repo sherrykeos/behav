@@ -247,6 +247,7 @@ export default function BehaviorsScreen() {
             await createBehavior(data);
           }
         }}
+        onDelete={deleteBehavior}
       />
     </ScreenWrapper>
   );

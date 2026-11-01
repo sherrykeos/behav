@@ -63,6 +63,83 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    name: 'add_icon_and_nickname_to_behaviors',
+    up: async (db: SQLiteDatabase) => {
+      try {
+        await db.execAsync('ALTER TABLE behaviors ADD COLUMN icon TEXT;');
+      } catch {
+        // column may already exist
+      }
+      try {
+        await db.execAsync('ALTER TABLE behaviors ADD COLUMN nickname TEXT;');
+      } catch {
+        // column may already exist
+      }
+    },
+  },
+  {
+    version: 3,
+    name: 'add_subtitle_to_behaviors',
+    up: async (db: SQLiteDatabase) => {
+      try {
+        await db.execAsync('ALTER TABLE behaviors ADD COLUMN subtitle TEXT;');
+      } catch {
+        // column may already exist
+      }
+    },
+  },
+  {
+    version: 4,
+    name: 'enforce_daily_record_integrity',
+    up: async (db: SQLiteDatabase) => {
+      // 1. Collapse any duplicate records for the same behavior on the same calendar date
+      const duplicates = await db.getAllAsync<{
+        behavior_id: string;
+        dt: string;
+        count: number;
+        total_val: number;
+      }>(`
+        SELECT 
+          behavior_id,
+          substr(occurred_at, 1, 10) as dt,
+          COUNT(*) as count,
+          SUM(value) as total_val
+        FROM log_entries
+        GROUP BY behavior_id, substr(occurred_at, 1, 10)
+        HAVING count > 1;
+      `);
+
+      for (const dup of duplicates) {
+        const rows = await db.getAllAsync<{ id: string }>(`
+          SELECT id FROM log_entries
+          WHERE behavior_id = ? AND substr(occurred_at, 1, 10) = ?
+          ORDER BY occurred_at ASC;
+        `, [dup.behavior_id, dup.dt]);
+
+        if (rows.length > 1) {
+          const keepId = rows[0].id;
+          const deleteIds = rows.slice(1).map((r) => r.id);
+          // Update the first row with the consolidated total
+          await db.runAsync(
+            'UPDATE log_entries SET value = ? WHERE id = ?;',
+            [dup.total_val, keepId]
+          );
+          // Delete duplicate rows
+          for (const delId of deleteIds) {
+            await db.runAsync('DELETE FROM log_entries WHERE id = ?;', [delId]);
+          }
+        }
+      }
+
+      // 2. Create index for fast date-based lookup
+      await db.execAsync(`
+        CREATE INDEX IF NOT EXISTS idx_log_entries_behavior_date
+        ON log_entries(behavior_id, substr(occurred_at, 1, 10));
+      `);
+    },
+  },
 ];
 
 /**

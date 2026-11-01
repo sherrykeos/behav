@@ -265,6 +265,12 @@ export const typography = {
     fontWeight: '600' as const,
     color: colors.textPrimary,
   },
+  labelMedium: {
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '600' as const,
+    color: colors.textPrimary,
+  },
   labelSmall: {
     fontSize: 11,
     lineHeight: 14,
